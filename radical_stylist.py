@@ -63,8 +63,9 @@ class RadicalStylist:
             json.dump(self.radicalname2idx, f)
         
         self.writer2idx = writer2idx
-        with open(os.path.join(self.save_path, "writer2idx.json"), "w") as f:
-            json.dump(self.writer2idx, f)
+        if self.writer2idx is not None:
+            with open(os.path.join(self.save_path, "writer2idx.json"), "w") as f:
+                json.dump(self.writer2idx, f)
         
         # model info
         
@@ -110,7 +111,7 @@ class RadicalStylist:
             num_res_blocks=self.num_res_blocks,
             attention_resolutions=(1, 1),
             channel_mult=(1, 1),
-            num_classes=len(self.writer2idx),
+            num_classes=(len(self.writer2idx) if self.writer2idx is not None else None),
             num_heads=self.num_heads,
             context_dim=self.dim_char_embedding,
             vocab_size=len(self.radicalname2idx),
@@ -145,8 +146,11 @@ class RadicalStylist:
         with open(os.path.join(save_path, "radicalname2idx.json")) as f:
             radicalname2idx = json.load(f)
         
-        with open(os.path.join(save_path, "writer2idx.json")) as f:
-            writer2idx = json.load(f)
+        if os.path.isfile(os.path.join(save_path, "writer2idx.json")):
+            with open(os.path.join(save_path, "writer2idx.json")) as f:
+                writer2idx = json.load(f)
+        else:
+            writer2idx = None
         
         with open(os.path.join(save_path, "model_info.json")) as f:
             model_info = json.load(f)
@@ -253,11 +257,15 @@ class RadicalStylist:
                     for radical in char.radicals:
                         radical.idx = self.radicalname2idx[radical.name]
                 
-                for i in range(len(writers)):
-                    writers[i] = self.writer2idx[writers[i]]
-                
-                writers_idx = torch.tensor(writers, dtype=torch.long, device=self.device)
-                
+                if self.writer2idx is None:
+                    writers_idx = None
+                    
+                else:
+                    for i in range(len(writers)):
+                        writers[i] = self.writer2idx[writers[i]]
+
+                    writers_idx = torch.tensor(writers, dtype=torch.long, device=self.device)
+
                 t = self.diffusion.sample_timesteps(images.shape[0]).to(self.device)
                 x_t, noise = self.diffusion.noise_images(images, t)
                 
@@ -319,24 +327,39 @@ class RadicalStylist:
             for radical in char.radicals:
                 radical.idx = self.radicalname2idx[radical.name]
         
-        writers_idx = [self.writer2idx[w] for w in writers]
+        if type(writers) == int:
+            n_per_chars = writers
+            
+            tmp_chars = []
+            for c in chars:
+                for _ in range(n_per_chars):
+                    tmp_chars.append(c)
+            chars = tmp_chars
+            del tmp_chars
+            
+            writers_idx = writers
         
-        tmp_chars = []
-        tmp_writers_idx = []
-        for c in chars:
-            for w in writers_idx:
-                tmp_chars.append(c)
-                tmp_writers_idx.append(w)
-        chars, writers_idx = tmp_chars, tmp_writers_idx
-        del tmp_chars, tmp_writers_idx
-        
+        else:
+            n_per_chars = len(writers)
+            
+            writers_idx = [self.writer2idx[w] for w in writers]
+            
+            tmp_chars = []
+            tmp_writers_idx = []
+            for c in chars:
+                for w in writers_idx:
+                    tmp_chars.append(c)
+                    tmp_writers_idx.append(w)
+            chars, writers_idx = tmp_chars, tmp_writers_idx
+            del tmp_chars, tmp_writers_idx
+            
         ema_sampled_images = self.diffusion.sampling(
             self.ema_model, self.vae, chars, writers_idx
         )
         
         # char 毎にして返す
         ret = []
-        for i in range(0, ema_sampled_images.shape[0], len(writers)):
-            ret.append(ema_sampled_images[i:(i + len(writers))])
+        for i in range(0, ema_sampled_images.shape[0], n_per_chars):
+            ret.append(ema_sampled_images[i:(i + n_per_chars)])
         
         return ret

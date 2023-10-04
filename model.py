@@ -67,11 +67,16 @@ class Diffusion:
     def sampling(self, unet, vae, chars, writers_idx, mix_rate=None, cfg_scale=3):
         unet.eval()
         
-        assert len(chars) == len(writers_idx)
         n = len(chars)
         
-        writers_idx = torch.tensor(writers_idx, dtype=torch.long, device=self.device)
+        if type(writers_idx) == int:
+            assert 0 < writers_idx
+            writers_idx = None
         
+        else:
+            assert n == len(writers_idx)
+            writers_idx = torch.tensor(writers_idx, dtype=torch.long, device=self.device)
+
         with torch.no_grad():
             x = torch.randn((n, 4, self.image_size // 8, self.image_size // 8)).to(self.device) # vae による次元削減
             

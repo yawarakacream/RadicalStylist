@@ -963,7 +963,6 @@ class UNetModel(nn.Module):
             nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
         )
         
-    
     def convert_to_fp16(self):
         """
         Convert the torso of the model to float16.
@@ -972,6 +971,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f16)
         self.output_blocks.apply(convert_module_to_f16)
 
+        
     def convert_to_fp32(self):
         """
         Convert the torso of the model to float32.
@@ -979,7 +979,6 @@ class UNetModel(nn.Module):
         self.input_blocks.apply(convert_module_to_f32)
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
-    
     
     def forward(self, x, timesteps=None, chars=None, writers_idx=None, mix_rate=None, **kwargs):
         """
@@ -991,17 +990,18 @@ class UNetModel(nn.Module):
         :return: an [N x C x ...] Tensor of outputs.
         """
         
-        assert (writers_idx is not None) == (
-            self.num_classes is not None
-        ), "must specify y if and only if the model is class-conditional"
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
+        
         emb = self.time_embed(t_emb)
         
-        if self.num_classes is not None:
-            assert writers_idx.shape == (x.shape[0],)
+        if self.num_classes is None:
+            assert writers_idx is None
         
-        emb = emb + self.label_emb(writers_idx)
+        else:
+            assert writers_idx is not None
+            assert writers_idx.shape == (x.shape[0],)
+            emb = emb + self.label_emb(writers_idx)
         
         chars = self.char_encoder(chars)
         

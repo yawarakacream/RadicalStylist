@@ -19,6 +19,7 @@ def main(
     image_size,
     dim_char_embedding,
     char_length,
+    learn_writer,
     num_res_blocks,
     num_heads,
     
@@ -48,10 +49,8 @@ def main(
     # charname2radicaljson
     with open(radicals_data_path) as f:
         radicals_data = json.load(f)
-    charname2radicaljson = {}
-    for radical in radicals_data:
-        charname2radicaljson[radical["name"]] = radical
-        
+    charname2radicaljson = {radical["name"]: radical for radical in radicals_data}
+    
     # 謎
     transforms = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
@@ -97,13 +96,17 @@ def main(
     print(f"radicals: {len(radicalname2idx)}")
     
     # writer2idx
-    writer2idx = {}
-    for i, writer in enumerate(all_writers):
-        writer2idx[writer] = i
-    
-    # prepare test
-    print("test writers:", ", ".join(test_writers))
-    
+    if learn_writer:
+        writer2idx = {w: i for i, w in enumerate(all_writers)}
+        
+        assert type(test_writers) == list
+        print("test writers:", ", ".join(test_writers))
+        
+    else:
+        writer2idx = None
+        
+        assert type(test_writers) == int and 0 < test_writers
+
     print("test characters:")
     
     tmp = []
@@ -195,14 +198,14 @@ if __name__ == "__main__":
     # test_chars += []
     
     main(
-        save_path=pathstr("./datadisk/save_path/D_postype=4"),
+        save_path=pathstr("./datadisk/save_path ETL8G_400/normal"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
         radicals_data_path=pathstr("~/datadisk/radical_processed/KanjiVG/all.json"),
         
         image_size=64,
-        # dim_char_embedding=384,
-        dim_char_embedding=768,
+        dim_char_embedding=384,
         char_length=12,
+        learn_writer=True,
         num_res_blocks=1,
         num_heads=4,
         
@@ -218,12 +221,13 @@ if __name__ == "__main__":
         epochs=1000,
         num_workers=4,
         
-        corpuses=[corpus("etlcdb/no_background 64x64/ETL8G")],
+        corpuses=[corpus("etlcdb/no_background 64x64/ETL8G_400")],
         train_chars_filter=None,
         etlcdb_path=pathstr("~/datadisk/etlcdb_processed"),
         
         test_chars=test_chars,
-        test_writers=[f"ETL8G_{i}" for i in range(1, 8 + 1)],
+        test_writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
+        # test_writers=8,
         
         device=args.device,
     )
