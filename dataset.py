@@ -185,10 +185,6 @@ class ConcatDataset(Dataset):
                 if char in character.all_kanas:
                     continue
                 
-                # writer のフィルタ (暫定)
-                # if 400 < int(writer.split("_")[1]):
-                #     continue
-                
                 self.all_charnames.add(char)
                 self.all_writers.add(writer)
                 
