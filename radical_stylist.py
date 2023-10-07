@@ -1,27 +1,25 @@
 import copy
 import json
 import os
-import sys
 import random
+import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "stable_diffusion"))
+
+from tqdm import tqdm
 
 import numpy as np
 import torch
 from torch import optim, nn
 from torch.utils.data import DataLoader
 
-from tqdm import tqdm
-
 from diffusers import AutoencoderKL
 
 from dataset import ConcatDataset
-from layer import UNetModel
-from model import EMA, Diffusion
+from diffusion import EMA, Diffusion
+from image_vae import StableDiffusionVae
+from unet import UNetModel
 from utility import char2code, save_images
-
-
-STABLE_DIFFUSION_CHANNEL = 4
 
 
 class RadicalStylist:
@@ -51,12 +49,13 @@ class RadicalStylist:
         device,
     ):
         self.device = device
+        if type(self.device) == str:
+            self.device = torch.device(self.device)
         
         self.save_path = save_path
         os.makedirs(self.save_path, exist_ok=True)
         
-        self.vae = AutoencoderKL.from_pretrained(stable_diffusion_path, subfolder="vae").to(self.device)
-        self.vae.requires_grad_(False)
+        self.vae = StableDiffusionVae(stable_diffusion_path, image_size, device)
         
         self.radicalname2idx = radicalname2idx
         with open(os.path.join(self.save_path, "radicalname2idx.json"), "w") as f:
@@ -104,10 +103,10 @@ class RadicalStylist:
         # create layers
         
         self.unet = UNetModel(
-            image_size=self.image_size,
-            in_channels=STABLE_DIFFUSION_CHANNEL,
+            image_size=self.vae.image_size,
+            in_channels=self.vae.num_channels,
             model_channels=self.dim_char_embedding,
-            out_channels=STABLE_DIFFUSION_CHANNEL,
+            out_channels=self.vae.num_channels,
             num_res_blocks=self.num_res_blocks,
             attention_resolutions=(1, 1),
             channel_mult=(1, 1),
@@ -124,10 +123,11 @@ class RadicalStylist:
         self.ema_model = copy.deepcopy(self.unet).eval().requires_grad_(False)
         
         self.diffusion = Diffusion(
+            image_size=self.vae.image_size,
+            num_image_channels=self.vae.num_channels,
             noise_steps=self.diffusion_noise_steps,
             beta_start=self.diffusion_beta_start,
             beta_end=self.diffusion_beta_end,
-            image_size=self.image_size,
             device=self.device,
         )
     
@@ -217,6 +217,19 @@ class RadicalStylist:
         
         return instance
     
+    def prepare_chars(self, chars, shuffle_radicals=False, deepcopy=True):
+        if deepcopy:
+            chars = copy.deepcopy(chars)
+        
+        for char in chars:
+            if shuffle_radicals:
+                random.shuffle(char.radicals)
+                
+            for radical in char.radicals:
+                radical.idx = self.radicalname2idx[radical.name]
+                
+        return chars
+    
     def train(self, data_loader: DataLoader[ConcatDataset], epochs, test_chars, test_writers):
         if os.path.exists(os.path.join(self.save_path, "train_info.json")):
             raise Exception("already trained")
@@ -247,29 +260,22 @@ class RadicalStylist:
             loss_list.append(0)
             
             pbar = tqdm(data_loader, desc=f"{epoch=}")
-            for i, (images, chars, writers) in enumerate(pbar):
-                images = images.to(dtype=torch.float32, device=self.device)
-                images = self.vae.encode(images).latent_dist.sample()
-                images = images * 0.18215
+            for images, chars, writers in pbar:
+                images = self.vae.encode(images)
                 
-                for char in chars:
-                    random.shuffle(char.radicals)
-                    for radical in char.radicals:
-                        radical.idx = self.radicalname2idx[radical.name]
+                chars = self.prepare_chars(chars, shuffle_radicals=True, deepcopy=False)
                 
                 if self.writer2idx is None:
                     writers_idx = None
-                    
                 else:
                     for i in range(len(writers)):
                         writers[i] = self.writer2idx[writers[i]]
-
                     writers_idx = torch.tensor(writers, dtype=torch.long, device=self.device)
 
-                t = self.diffusion.sample_timesteps(images.shape[0]).to(self.device)
-                x_t, noise = self.diffusion.noise_images(images, t)
+                ts = self.diffusion.sample_timesteps(images.shape[0])
+                x_t, noise = self.diffusion.noise_images(images, ts)
                 
-                predicted_noise = self.unet(x_t, t, chars, writers_idx)
+                predicted_noise = self.unet(x_t, ts, chars, writers_idx)
                 
                 loss = mse_loss(noise, predicted_noise)
                 
@@ -322,10 +328,7 @@ class RadicalStylist:
                     json.dump(info, f)
 
     def sampling(self, chars, writers):
-        chars = copy.deepcopy(chars)
-        for char in chars:
-            for radical in char.radicals:
-                radical.idx = self.radicalname2idx[radical.name]
+        chars = self.prepare_chars(chars)
         
         if type(writers) == int:
             n_per_chars = writers
@@ -337,29 +340,28 @@ class RadicalStylist:
             chars = tmp_chars
             del tmp_chars
             
-            writers_idx = writers
+            writers_idx = None
         
         else:
             n_per_chars = len(writers)
             
-            writers_idx = [self.writer2idx[w] for w in writers]
-            
             tmp_chars = []
             tmp_writers_idx = []
             for c in chars:
-                for w in writers_idx:
+                for w in writers:
                     tmp_chars.append(c)
-                    tmp_writers_idx.append(w)
+                    tmp_writers_idx.append(self.writer2idx[w])
             chars, writers_idx = tmp_chars, tmp_writers_idx
             del tmp_chars, tmp_writers_idx
             
-        ema_sampled_images = self.diffusion.sampling(
-            self.ema_model, self.vae, chars, writers_idx
-        )
+            writers_idx = torch.tensor(writers_idx, dtype=torch.long, device=self.device)
+            
+        sampled = self.diffusion.sampling(self.ema_model, chars, writers_idx)
+        sampled = self.vae.decode(sampled)
         
         # char 毎にして返す
-        ret = []
-        for i in range(0, ema_sampled_images.shape[0], n_per_chars):
-            ret.append(ema_sampled_images[i:(i + n_per_chars)])
-        
+        # ret = []
+        # for i in range(0, sampled.shape[0], n_per_chars):
+        #     ret.append(sampled[i:(i + n_per_chars)])
+        ret = [sampled[i:(i + n_per_chars)] for i in range(0, sampled.shape[0], n_per_chars)]
         return ret

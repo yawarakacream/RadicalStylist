@@ -9,6 +9,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+import torchvision
+
 from PIL import Image
 
 import character
@@ -133,26 +135,22 @@ class Char:
         return f"{self.name} = {' + '.join(map(lambda r: r.name, self.radicals))}"
 
 
-def create_data_loader(batch_size, shuffle, num_workers, datasets, chars_filter, charname2radicaljson, transforms):
+def create_data_loader(batch_size, shuffle, num_workers, datasets, chars_filter, charname2radicaljson):
+    pil_to_tensor = torchvision.transforms.ToTensor()
+    
     def collate_fn(batch):
-        nonlocal transforms
+        nonlocal pil_to_tensor
         
-        images = []
-        chars = []
-        writers = []
+        images = [None for _ in range(len(batch))]
+        chars = [None for _ in range(len(batch))]
+        writers = [None for _ in range(len(batch))]
         
         for i, (image_path, char, writer) in enumerate(batch):
-            image = Image.open(image_path).convert("RGB")
-            image = transforms(image)
-            images.append(image)
-            
-            chars.append(char)
-            
-            writers.append(writer)
+            images[i] = pil_to_tensor(Image.open(image_path).convert("RGB"))
+            chars[i] = copy.deepcopy(char)
+            writers[i] = copy.deepcopy(writer)
         
         images = torch.stack(images, 0)
-        chars = copy.deepcopy(chars)
-        writers = copy.deepcopy(writers)
         
         return images, chars, writers
     

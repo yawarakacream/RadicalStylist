@@ -1,13 +1,13 @@
+import argparse
 import json
 import os
-import argparse
 
 from torch.utils.data import DataLoader
 
 import torchvision
 
-from radical_stylist import RadicalStylist
 from dataset import Char, Radical, create_data_loader, EtlcdbDataset
+from radical_stylist import RadicalStylist
 from utility import pathstr
 
 
@@ -51,12 +51,6 @@ def main(
         radicals_data = json.load(f)
     charname2radicaljson = {radical["name"]: radical for radical in radicals_data}
     
-    # 謎
-    transforms = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    ])
-    
     # dataset
     datasets = []
     for corpus in corpuses:
@@ -73,7 +67,6 @@ def main(
     data_loader, all_charnames, all_writers = create_data_loader(
         batch_size, True, num_workers,
         datasets, train_chars_filter, charname2radicaljson,
-        transforms,
     )
     print(f"train data:")
     print(f"\tchars: {len(all_charnames)}")
@@ -198,14 +191,14 @@ if __name__ == "__main__":
     # test_chars += []
     
     main(
-        save_path=pathstr("./datadisk/save_path ETL8G_400/normal"),
+        save_path=pathstr("./datadisk/save_path ETL8G_400/ignore_writer epochs=2000"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
         radicals_data_path=pathstr("~/datadisk/radical_processed/KanjiVG/all.json"),
         
         image_size=64,
         dim_char_embedding=384,
         char_length=12,
-        learn_writer=True,
+        learn_writer=False,
         num_res_blocks=1,
         num_heads=4,
         
@@ -218,7 +211,8 @@ if __name__ == "__main__":
         diversity_lambda=0.0,
         
         batch_size=244,
-        epochs=1000,
+        # epochs=1000,
+        epochs=2000,
         num_workers=4,
         
         corpuses=[corpus("etlcdb/no_background 64x64/ETL8G_400")],
@@ -226,8 +220,8 @@ if __name__ == "__main__":
         etlcdb_path=pathstr("~/datadisk/etlcdb_processed"),
         
         test_chars=test_chars,
-        test_writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
-        # test_writers=8,
+        # test_writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
+        test_writers=8,
         
         device=args.device,
     )

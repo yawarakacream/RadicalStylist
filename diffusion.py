@@ -1,7 +1,7 @@
+from tqdm import tqdm
+
 import numpy as np
 import torch
-
-from tqdm import tqdm
 
 
 # https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/train.py#L120
@@ -29,9 +29,9 @@ class EMA:
     def step_ema(self, ema_model, model, step_start_ema=2000):
         if self.step < step_start_ema:
             self.reset_parameters(ema_model, model)
-            self.step += 1
-            return
-        self.update_model_average(ema_model, model)
+        else:
+            self.update_model_average(ema_model, model)
+            
         self.step += 1
 
     def reset_parameters(self, ema_model, model):
@@ -40,48 +40,48 @@ class EMA:
 
 # https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/train.py#L154
 class Diffusion:
-    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, image_size=64, device=None):
+    def __init__(self, image_size, num_image_channels, noise_steps=1000, beta_start=1e-4, beta_end=0.02, device=None):
+        self.device = device
+
+        self.image_size = image_size
+        self.num_image_channels = num_image_channels
+        
         self.noise_steps = noise_steps
         self.beta_start = beta_start
         self.beta_end = beta_end
 
-        self.beta = self.prepare_noise_schedule().to(device)
+        self.beta = self.prepare_noise_schedule()
         self.alpha = 1.0 - self.beta
         self.alpha_hat = torch.cumprod(self.alpha, dim=0)
 
-        self.image_size = image_size
-        self.device = device
-
     def prepare_noise_schedule(self):
-        return torch.linspace(self.beta_start, self.beta_end, self.noise_steps)
+        return torch.linspace(self.beta_start, self.beta_end, self.noise_steps, device=self.device)
     
     def noise_images(self, x, t):
         sqrt_alpha_hat = torch.sqrt(self.alpha_hat[t])[:, None, None, None]
         sqrt_one_minus_alpha_hat = torch.sqrt(1 - self.alpha_hat[t])[:, None, None, None]
-        Ɛ = torch.randn_like(x)
-        return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * Ɛ, Ɛ
+        epsilon = torch.randn_like(x)
+        return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * epsilon, epsilon
     
     def sample_timesteps(self, n):
-        return torch.randint(low=1, high=self.noise_steps, size=(n,))
+        return torch.randint(low=1, high=self.noise_steps, size=(n,), device=self.device)
 
-    def sampling(self, unet, vae, chars, writers_idx, mix_rate=None, cfg_scale=3):
+    @torch.no_grad()
+    def sampling(self, unet, chars, writers_idx, mix_rate=None, cfg_scale=3):
         unet.eval()
         
         n = len(chars)
         
-        if type(writers_idx) == int:
-            assert 0 < writers_idx
-            writers_idx = None
-        
+        if writers_idx is None:
+            pass
         else:
-            assert n == len(writers_idx)
-            writers_idx = torch.tensor(writers_idx, dtype=torch.long, device=self.device)
+            assert n == writers_idx.shape[0]
 
         with torch.no_grad():
-            x = torch.randn((n, 4, self.image_size // 8, self.image_size // 8)).to(self.device) # vae による次元削減
+            x = torch.randn((n, self.num_image_channels, self.image_size, self.image_size), device=self.device)
             
             for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
-                t = (torch.ones(n) * i).long().to(self.device)
+                t = torch.ones(n, dtype=torch.long, device=self.device) * i
                 predicted_noise = unet(x, t, chars, writers_idx, mix_rate=mix_rate)
                 
                 if cfg_scale > 0:
@@ -101,13 +101,4 @@ class Diffusion:
 
         unet.train()
         
-        latents = 1 / 0.18215 * x
-        image = vae.decode(latents).sample
-
-        image = (image / 2 + 0.5).clamp(0, 1)
-        image = image.cpu().permute(0, 2, 3, 1).numpy()
-
-        image = torch.from_numpy(image)
-        x = image.permute(0, 3, 1, 2)
-            
         return x
