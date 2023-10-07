@@ -360,8 +360,5 @@ class RadicalStylist:
         sampled = self.vae.decode(sampled)
         
         # char 毎にして返す
-        # ret = []
-        # for i in range(0, sampled.shape[0], n_per_chars):
-        #     ret.append(sampled[i:(i + n_per_chars)])
         ret = [sampled[i:(i + n_per_chars)] for i in range(0, sampled.shape[0], n_per_chars)]
         return ret
