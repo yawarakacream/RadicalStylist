@@ -14,6 +14,7 @@ import torchvision
 from PIL import Image
 
 import character
+from utility import pathstr
 
 
 @dataclass
@@ -215,13 +216,13 @@ class EtlcdbDataset(RSDataset):
         self.items = []
         
         for etlcdb_name in etlcdb_names:
-            json_path = os.path.join(etlcdb_path, f"{etlcdb_name}.json")
+            json_path = pathstr(etlcdb_path, f"{etlcdb_name}.json")
             with open(json_path) as f:
                 json_data = json.load(f)
 
             for item in json_data:
                 relative_image_path = item["Path"] # ex) ETL4/5001/0x3042.png
-                image_path = os.path.join(etlcdb_path, etlcdb_process_type, relative_image_path)
+                image_path = pathstr(etlcdb_path, etlcdb_process_type, relative_image_path)
                 
                 charname = item["Character"] # ex) "あ"
                 

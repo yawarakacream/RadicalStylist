@@ -11,8 +11,8 @@ def char2code(char):
 # def code2char(code):
 #     chr(int(code, base=16))
 
-def pathstr(t):
-    return os.path.expanduser(t)
+def pathstr(*s):
+    return os.path.abspath(os.path.expanduser(os.path.join(*s)))
 
 def save_images(images, path):
     m = torch.mean(images, dtype=torch.float).item()
