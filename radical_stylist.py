@@ -221,7 +221,7 @@ class RadicalStylist:
         
         os.makedirs(os.path.join(self.save_path, "models"))
         os.makedirs(os.path.join(self.save_path, "generated"))
-    
+        
         num_epochs_digit = len(str(epochs))
         num_test_chars_digit = len(str(len(test_chars)))
         
@@ -252,7 +252,7 @@ class RadicalStylist:
                 if self.writername2idx is None:
                     writerindices = None
                 else:
-                    writerindices = torch.tensor(writers, dtype=torch.long, device=self.device)
+                    writerindices = torch.tensor(writerindices, dtype=torch.long, device=self.device)
 
                 # train
                 ts = self.diffusion.sample_timesteps(images.shape[0])

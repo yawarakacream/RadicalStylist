@@ -17,15 +17,26 @@ from utility import pathstr
 
 
 class RSDataset(Dataset):
-    def __init__(self, charname2radicaljson, ignore_kana=False):
+    def __init__(
+        self,
+        
+        charname2radicaljson,
+        ignore_kana=False,
+        
+        items=None,
+        all_charnames=None,
+        all_writernames=None,
+        
+        info=None,
+    ):
         self.charname2radicaljson = charname2radicaljson
         self.ignore_kana = ignore_kana
         
-        self.items = []
-        self.all_charnames = set()
-        self.all_writernames = set()
+        self.items = items or []
+        self.all_charnames = all_charnames or set()
+        self.all_writernames = all_writernames or set()
         
-        self.info = {
+        self.info = info or {
             "ignore_kana": ignore_kana,
             "datasets": [],
         }
@@ -65,6 +76,70 @@ class RSDataset(Dataset):
             writername = f"{etlcdb_name}_{serial_sheet_number}"
 
             self.add_item(image_path, charname, writername)
+
+    def add_from_corpuses_string(self, corpuses, etlcdb_path):
+        for corpus in corpuses:
+            corpus = corpus.split("/")
+            corpus_type = corpus[0]
+
+            if corpus_type == "etlcdb":
+                _, etlcdb_process_type, etlcdb_names = corpus
+                etlcdb_names = etlcdb_names.split(",")
+                
+                for etlcdb_name in etlcdb_names:
+                    self.add_etlcdb(etlcdb_path, etlcdb_process_type, etlcdb_name)
+
+            else:
+                raise Exception(f"unknown corpus type: {corpus_type}")
+    
+    def create_radicalname2idx(self):
+        radicalname2idx = {}
+        
+        for _, char, _ in self.items:
+            for radical in char.radicals:
+                if radical.name is None:
+                    continue
+
+                radicalname2idx.setdefault(radical.name, len(radicalname2idx))
+                
+        return radicalname2idx
+    
+    def create_writername2idx(self):
+        return {w: i for i, w in enumerate(self.all_writernames)}
+    
+    def random_split(self, lengths):
+        if any(map(lambda l: isinstance(l, float), lengths)):
+            lengths = [int(len(self.items) * l) for l in lengths]
+        assert all(map(lambda l: 0 <= l, lengths))
+        
+        r = len(self.items) - sum(lengths)
+        assert 0 <= r
+        
+        i = 0
+        while 0 < r:
+            lengths[i % len(lengths)] += 1
+            i += 1
+            r -= 1
+        
+        items = copy.deepcopy(self.items)
+        random.shuffle(items)
+        
+        sub_list = []
+        a = 0
+        for l in lengths:
+            sub_list.append(RSDataset(
+                charname2radicaljson=self.charname2radicaljson,
+                ignore_kana=self.info,
+
+                items=items[a:(a + l)],
+                all_charnames=self.all_charnames,
+                all_writernames=self.all_writernames,
+
+                info=self.info,
+            ))
+            a += l
+        
+        return sub_list
 
         
 def create_dataloader(
