@@ -77,27 +77,26 @@ class Diffusion:
         else:
             assert n == writers_idx.shape[0]
 
-        with torch.no_grad():
-            x = torch.randn((n, self.num_image_channels, self.image_size, self.image_size), device=self.device)
-            
-            for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
-                t = torch.ones(n, dtype=torch.long, device=self.device) * i
-                predicted_noise = unet(x, t, chars, writers_idx, mix_rate=mix_rate)
-                
-                if cfg_scale > 0:
-                    uncond_predicted_noise = unet(x, t, chars, writers_idx, mix_rate)
-                    predicted_noise = torch.lerp(uncond_predicted_noise, predicted_noise, cfg_scale)
-                    
-                alpha = self.alpha[t][:, None, None, None]
-                alpha_hat = self.alpha_hat[t][:, None, None, None]
-                beta = self.beta[t][:, None, None, None]
-                
-                if i > 1:
-                    noise = torch.randn_like(x)
-                else:
-                    noise = torch.zeros_like(x)
-                    
-                x = 1 / torch.sqrt(alpha) * (x - ((1 - alpha) / (torch.sqrt(1 - alpha_hat))) * predicted_noise) + torch.sqrt(beta) * noise
+        x = torch.randn((n, self.num_image_channels, self.image_size, self.image_size), device=self.device)
+
+        for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
+            t = torch.ones(n, dtype=torch.long, device=self.device) * i
+            predicted_noise = unet(x, t, chars, writers_idx, mix_rate=mix_rate)
+
+            if cfg_scale > 0:
+                uncond_predicted_noise = unet(x, t, chars, writers_idx, mix_rate)
+                predicted_noise = torch.lerp(uncond_predicted_noise, predicted_noise, cfg_scale)
+
+            alpha = self.alpha[t][:, None, None, None]
+            alpha_hat = self.alpha_hat[t][:, None, None, None]
+            beta = self.beta[t][:, None, None, None]
+
+            if i > 1:
+                noise = torch.randn_like(x)
+            else:
+                noise = torch.zeros_like(x)
+
+            x = 1 / torch.sqrt(alpha) * (x - ((1 - alpha) / (torch.sqrt(1 - alpha_hat))) * predicted_noise) + torch.sqrt(beta) * noise
 
         unet.train()
         
