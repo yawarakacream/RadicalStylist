@@ -4,7 +4,8 @@ import os
 import random
 import sys
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "stable_diffusion"))
+if not all(map(lambda p: p.endswith("stable_diffusion"), sys.path)):
+    sys.path.append(os.path.join(os.path.dirname(__file__), "stable_diffusion"))
 
 from tqdm import tqdm
 
