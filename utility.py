@@ -27,3 +27,6 @@ def save_single_image(image, path):
     image = torchvision.transforms.ToPILImage()(image)
     image.save(path)
     return image
+
+def rgb_to_grayscale(images):
+    return torchvision.transforms.functional.rgb_to_grayscale(images, num_output_channels=3)
