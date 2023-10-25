@@ -1,7 +1,6 @@
 import copy
 import json
 import os
-import random
 import sys
 
 if not all(map(lambda p: p.endswith("stable_diffusion"), sys.path)):
@@ -9,18 +8,13 @@ if not all(map(lambda p: p.endswith("stable_diffusion"), sys.path)):
 
 from tqdm import tqdm
 
-import numpy as np
 import torch
 from torch import optim, nn
-from torch.utils.data import DataLoader
 
-from diffusers import AutoencoderKL
-
-from dataset import RSDataset, create_dataloader
 from diffusion import EMA, Diffusion
 from image_vae import StableDiffusionVae
 from unet import UNetModel
-from utility import char2code, save_images
+from utility import save_images
 
 
 class RadicalStylist:

@@ -1,11 +1,8 @@
 import argparse
 import json
-import os
+from typing import Union
 
 import torch
-from torch.utils.data import DataLoader
-
-import torchvision
 
 from character import Char, Radical
 from dataset import RSDataset, create_dataloader
@@ -14,38 +11,38 @@ from utility import pathstr
 
 
 def main(
-    save_path,
-    stable_diffusion_path,
-    radicals_data_path,
+    save_path: str,
+    stable_diffusion_path: str,
+    radicals_data_path: str,
     
-    image_size,
-    dim_char_embedding,
-    char_length,
-    learn_writer,
-    num_res_blocks,
-    num_heads,
+    image_size: int,
+    dim_char_embedding: int,
+    char_length: int,
+    learn_writer: bool,
+    num_res_blocks: int,
+    num_heads: int,
     
-    learning_rate,
-    ema_beta,
-    diffusion_noise_steps,
-    diffusion_beta_start,
-    diffusion_beta_end,
+    learning_rate: float,
+    ema_beta: float,
+    diffusion_noise_steps: int,
+    diffusion_beta_start: float,
+    diffusion_beta_end: float,
     
-    diversity_lambda,
+    diversity_lambda: float,
     
-    batch_size,
-    epochs,
-    shuffle_dataset,
-    dataloader_num_workers,
-    shuffle_radicals_of_char,
+    batch_size: int,
+    epochs: int,
+    shuffle_dataset: bool,
+    dataloader_num_workers: int,
+    shuffle_radicals_of_char: bool,
     
-    corpuses,
-    etlcdb_path,
+    corpuses: list[str],
+    etlcdb_path: str,
     
-    test_chars,
-    test_writers,
+    test_chars: list[Union[str, Char]],
+    test_writers: Union[list[str], int],
     
-    device,
+    device: torch.device,
 ):
     print(f"save: {save_path}")
     
@@ -143,35 +140,34 @@ if __name__ == "__main__":
     
     main(
         # save_path=pathstr("./datadisk/save_path ETL8G_400/ignore_writer epochs=2000"),
-        save_path=pathstr("./datadisk/tmp"),
+        save_path=pathstr("./output/rs normal ETL8G_400"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
         radicals_data_path=pathstr("~/datadisk/dataset/kanjivg/build/all.json"),
-        
+
         image_size=64,
         dim_char_embedding=384,
         char_length=12,
         learn_writer=True,
         num_res_blocks=1,
         num_heads=4,
-        
+
         learning_rate=0.0001,
         ema_beta=0.995,
         diffusion_noise_steps=1000,
         diffusion_beta_start=0.0001,
         diffusion_beta_end=0.02,
-        
+
         diversity_lambda=0.0,
-        
+
         batch_size=244,
-        epochs=100,
+        epochs=1000,
         shuffle_dataset=True,
         dataloader_num_workers=4,
         shuffle_radicals_of_char=True,
-        
+
         corpuses=["etlcdb/no_background 64x64/ETL8G_400"],
-        train_chars_filter=None,
         etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
-        
+
         test_chars=[
             # 訓練データにある字
             *"何標園遠",
@@ -187,6 +183,6 @@ if __name__ == "__main__":
         ],
         test_writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
         #test_writers=8,
-        
+
         device=torch.device(args.device),
     )
