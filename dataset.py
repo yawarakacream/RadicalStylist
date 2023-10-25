@@ -175,7 +175,7 @@ def create_dataloader(
                 Image.open(image_path).convert("RGB")
             )
 
-            chars[i] = copy.deepcopy(chars[i])
+            chars[i] = copy.deepcopy(char)
             chars[i].register_radicalidx(radicalname2idx)
             if shuffle_radicals_of_char:
                 random.shuffle(chars[i].radicals)
