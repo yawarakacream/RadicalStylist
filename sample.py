@@ -5,6 +5,7 @@ from typing import Union
 import torch
 
 from character import Char, Radical
+from image_vae import StableDiffusionVae
 from radical_stylist import RadicalStylist
 from utility import pathstr, save_images, char2code, create_charname2radicaljson
 
@@ -67,7 +68,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     main(
-        save_path=pathstr("./output/rs ignore_writer ETL8G_400"),
+        save_path=pathstr("./output/rs test"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
         radicals_data_path=pathstr("~/datadisk/dataset/kanjivg/build/all.json"),
 
