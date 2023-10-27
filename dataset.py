@@ -1,7 +1,7 @@
 import copy
 import json
 import random
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -117,9 +117,8 @@ class RSDataset(Dataset):
     def create_writername2idx(self) -> dict[str, int]:
         return {w: i for i, w in enumerate(self.all_writernames)}
 
-    def random_split(self, lengths: list[int]):
-        if any(map(lambda l: isinstance(l, float), lengths)):
-            lengths = [int(len(self.items) * l) for l in lengths]
+    def random_split(self, sizes: Sequence[float]):
+        lengths = [int(len(self.items) * l) for l in sizes]
         assert all(map(lambda l: 0 <= l, lengths))
 
         r = len(self.items) - sum(lengths)

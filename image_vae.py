@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 from torch import nn
 
@@ -9,7 +11,7 @@ from diffusers import AutoencoderKL
 class StableDiffusionVae:
     device: torch.device
 
-    vae: AutoencoderKL
+    vae: Any
 
     transforms: nn.Module
 
@@ -18,7 +20,7 @@ class StableDiffusionVae:
     def __init__(self, stable_diffusion_path: str, device: torch.device):
         self.device = device
         
-        self.vae = AutoencoderKL.from_pretrained(stable_diffusion_path, subfolder="vae").to(self.device)
+        self.vae = AutoencoderKL.from_pretrained(stable_diffusion_path, subfolder="vae").to(self.device) # type: ignore
         self.vae.requires_grad_(False)
         
         self.transforms = torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
