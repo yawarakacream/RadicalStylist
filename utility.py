@@ -1,15 +1,10 @@
+import json
 import os
 
 import torch
 
 import torchvision
 
-
-def char2code(char):
-    return format(ord(char), '#06x')
-
-# def code2char(code):
-#     chr(int(code, base=16))
 
 def pathstr(*s):
     return os.path.abspath(os.path.expanduser(os.path.join(*s)))
@@ -27,3 +22,14 @@ def save_single_image(image, path):
     image = torchvision.transforms.ToPILImage()(image)
     image.save(path)
     return image
+
+def char2code(char):
+    return format(ord(char), '#06x')
+
+# def code2char(code):
+#     chr(int(code, base=16))
+
+def create_charname2radicaljson(radicals_data_path: str):
+    with open(radicals_data_path) as f:
+        radicals_data = json.load(f)
+    return {radical["name"]: radical for radical in radicals_data}
