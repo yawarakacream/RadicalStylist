@@ -104,7 +104,7 @@ class RSClassifier:
         with open(pathstr(save_path, "radicalname2idx.json")) as f:
             radicalname2idx = json.load(f)
         
-        with open(pathstr(save_path, "model_info.json"), "w") as f:
+        with open(pathstr(save_path, "model_info.json")) as f:
             model_info = json.load(f)
             
             image_size = model_info["image_size"]
@@ -133,6 +133,8 @@ class RSClassifier:
         instance.classifier.eval()
         
         instance.optimizer.load_state_dict(torch.load(pathstr(save_path, "models", "optimizer.pt")))
+
+        return instance
 
     def save(self, *, exist_ok=True):
         if (not exist_ok) and os.path.exists(self.save_path):
@@ -170,10 +172,11 @@ class RSClassifier:
         answers = torch.tensor(answers, dtype=dtype, device=self.device)
         return answers
     
-    def predict_radicals(self, latents):
+    def predict_radicals(self, latents, one_hot=True):
         predictions = self.classifier(latents)
         predictions = torch.sigmoid(predictions)
-        predictions = torch.where(predictions > 0.5, 1, 0)
+        if one_hot:
+            predictions = torch.where(predictions > 0.5, 1, 0)
         return predictions
 
     def train(

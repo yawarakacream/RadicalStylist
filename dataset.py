@@ -6,13 +6,9 @@ from typing import Any, Optional, Sequence
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-import torchvision
-
-from PIL import Image
-
 import character_utility
 from character import Char, Radical
-from utility import pathstr
+from utility import pathstr, read_image_as_tensor
 
 
 RSDatasetItemType = tuple[str, Char, str] # (image_path, char, writername)
@@ -170,9 +166,7 @@ def create_dataloader(
         writerindices = writername2idx and [None for _ in range(len(batch))]
 
         for i, (image_path, char, writername) in enumerate(batch):
-            images[i] = torchvision.transforms.functional.to_tensor( # type: ignore
-                Image.open(image_path).convert("RGB")
-            )
+            images[i] = read_image_as_tensor(image_path)
 
             chars[i] = copy.deepcopy(char)
             chars[i].register_radicalidx(radicalname2idx)

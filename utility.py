@@ -1,9 +1,12 @@
 import json
 import os
+from typing import Any
 
 import torch
 
 import torchvision
+
+from PIL import Image
 
 
 def pathstr(*s):
@@ -26,8 +29,14 @@ def save_single_image(image, path):
     return image
 
 
+def read_image_as_tensor(image_path):
+    return torchvision.transforms.functional.to_tensor( # type: ignore
+        Image.open(image_path).convert("RGB")
+    )
+
+
 def rgb_to_grayscale(image):
-    return torchvision.transforms.functional.rgb_to_grayscale(image, num_output_channels=3)
+    return torchvision.transforms.functional.rgb_to_grayscale(image, num_output_channels=3) # type: ignore
 
 
 def char2code(char):
