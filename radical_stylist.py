@@ -22,10 +22,11 @@ class RadicalStylist:
         self,
         
         save_path,
-        stable_diffusion_path,
         
         radicalname2idx,
         writername2idx,
+
+        vae,
         
         image_size,
         dim_char_embedding,
@@ -39,16 +40,12 @@ class RadicalStylist:
         diffusion_beta_start,
         diffusion_beta_end,
         
-        diversity_lambda,
-        
         device,
     ):
         self.device = device
         
         self.save_path = save_path
         os.makedirs(self.save_path, exist_ok=True)
-        
-        self.vae = StableDiffusionVae(stable_diffusion_path, image_size, device)
         
         self.radicalname2idx = radicalname2idx
         with open(os.path.join(self.save_path, "radicalname2idx.json"), "w") as f:
@@ -59,6 +56,8 @@ class RadicalStylist:
             with open(os.path.join(self.save_path, "writername2idx.json"), "w") as f:
                 json.dump(self.writername2idx, f)
         
+        self.vae = vae
+
         # model info
         
         self.image_size = image_size
@@ -73,8 +72,6 @@ class RadicalStylist:
         self.diffusion_beta_start = diffusion_beta_start
         self.diffusion_beta_end = diffusion_beta_end
         
-        self.diversity_lambda = diversity_lambda
-        
         with open(os.path.join(self.save_path, "model_info.json"), "w") as f:
             info = {
                 "image_size": self.image_size,
@@ -88,18 +85,16 @@ class RadicalStylist:
                 "diffusion_noise_steps": self.diffusion_noise_steps,
                 "diffusion_beta_start": self.diffusion_beta_start,
                 "diffusion_beta_end": self.diffusion_beta_end,
-                
-                "diversity_lambda": self.diversity_lambda,
             }
             json.dump(info, f)
         
         # create layers
         
         self.unet = UNetModel(
-            image_size=self.vae.image_size,
-            in_channels=self.vae.num_channels,
+            image_size=self.vae.calc_latent_size(self.image_size),
+            in_channels=self.vae.latent_channels,
             model_channels=self.dim_char_embedding,
-            out_channels=self.vae.num_channels,
+            out_channels=self.vae.latent_channels,
             num_res_blocks=self.num_res_blocks,
             attention_resolutions=(1, 1),
             channel_mult=(1, 1),
@@ -116,8 +111,8 @@ class RadicalStylist:
         self.ema_model = copy.deepcopy(self.unet).eval().requires_grad_(False)
         
         self.diffusion = Diffusion(
-            image_size=self.vae.image_size,
-            num_image_channels=self.vae.num_channels,
+            image_size=self.vae.calc_latent_size(self.image_size),
+            num_image_channels=self.vae.latent_channels,
             noise_steps=self.diffusion_noise_steps,
             beta_start=self.diffusion_beta_start,
             beta_end=self.diffusion_beta_end,
@@ -125,12 +120,7 @@ class RadicalStylist:
         )
     
     @staticmethod
-    def load(
-        save_path,
-        stable_diffusion_path,
-        
-        device,
-    ):
+    def load(save_path: str, vae: StableDiffusionVae, device: torch.device):
         print("loading RadicalStylist...")
         
         if not os.path.exists(save_path):
@@ -159,15 +149,14 @@ class RadicalStylist:
             diffusion_noise_steps = model_info["diffusion_noise_steps"]
             diffusion_beta_start = model_info["diffusion_beta_start"]
             diffusion_beta_end = model_info["diffusion_beta_end"]
-            
-            diversity_lambda = model_info["diversity_lambda"]
         
         instance = RadicalStylist(
             save_path,
-            stable_diffusion_path,
 
             radicalname2idx,
             writername2idx,
+
+            vae,
 
             image_size,
             dim_char_embedding,
@@ -180,8 +169,6 @@ class RadicalStylist:
             diffusion_noise_steps,
             diffusion_beta_start,
             diffusion_beta_end,
-            
-            diversity_lambda,
 
             device,
         )

@@ -6,8 +6,9 @@ import torch
 
 from character import Char, Radical
 from dataset import RSDataset, create_dataloader
+from image_vae import StableDiffusionVae
 from radical_stylist import RadicalStylist
-from utility import pathstr
+from utility import pathstr, create_charname2radicaljson
 
 
 def main(
@@ -28,8 +29,6 @@ def main(
     diffusion_beta_start: float,
     diffusion_beta_end: float,
     
-    diversity_lambda: float,
-    
     batch_size: int,
     epochs: int,
     shuffle_dataset: bool,
@@ -46,19 +45,13 @@ def main(
 ):
     print(f"save: {save_path}")
     
-    # charname2radicaljson
-    with open(radicals_data_path) as f:
-        radicals_data = json.load(f)
-    charname2radicaljson = {radical["name"]: radical for radical in radicals_data}
+    charname2radicaljson = create_charname2radicaljson(radicals_data_path)
     
     # dataset
     dataset = RSDataset(charname2radicaljson, ignore_kana=True)
     dataset.add_from_corpuses_string(corpuses, etlcdb_path)
     
-    # radicalname2idx
     radicalname2idx = dataset.create_radicalname2idx()
-    
-    # writer
     writername2idx = dataset.create_writername2idx() if learn_writer else None
     
     dataloader = create_dataloader(
@@ -101,15 +94,18 @@ def main(
     
     test_chars = tmp
     del tmp
+
+    vae = StableDiffusionVae(stable_diffusion_path, device)
     
     print("initializing RadicalStylist")
     radical_stylist = RadicalStylist(
         save_path,
-        stable_diffusion_path,
         
         radicalname2idx,
         writername2idx,
         
+        vae,
+
         image_size,
         dim_char_embedding,
         char_length,
@@ -121,8 +117,6 @@ def main(
         diffusion_noise_steps,
         diffusion_beta_start,
         diffusion_beta_end,
-        
-        diversity_lambda,
         
         device,
     )
@@ -139,15 +133,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     main(
-        # save_path=pathstr("./datadisk/save_path ETL8G_400/ignore_writer epochs=2000"),
-        save_path=pathstr("./output/rs normal ETL8G_400"),
+        save_path=pathstr("./output/rs test"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
         radicals_data_path=pathstr("~/datadisk/dataset/kanjivg/build/all.json"),
 
         image_size=64,
         dim_char_embedding=384,
         char_length=12,
-        learn_writer=True,
+        learn_writer=False,
         num_res_blocks=1,
         num_heads=4,
 
@@ -156,8 +149,6 @@ if __name__ == "__main__":
         diffusion_noise_steps=1000,
         diffusion_beta_start=0.0001,
         diffusion_beta_end=0.02,
-
-        diversity_lambda=0.0,
 
         batch_size=244,
         epochs=1000,
@@ -181,8 +172,8 @@ if __name__ == "__main__":
             # 訓練データにないが部首データにある字
             *"倹困麻諭",
         ],
-        test_writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
-        #test_writers=8,
+        # test_writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
+        test_writers=8,
 
         device=torch.device(args.device),
     )

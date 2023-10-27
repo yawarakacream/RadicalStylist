@@ -38,15 +38,11 @@ def main(
 ):
     print(f"save: {save_path}")
     
-    # charname2radicaljson
     charname2radicaljson = create_charname2radicaljson(radicals_data_path)
 
-    rs = RadicalStylist.load(
-        save_path=save_path,
-        stable_diffusion_path=stable_diffusion_path,
+    vae = StableDiffusionVae(stable_diffusion_path, device)
 
-        device=device,
-    )
+    rs = RadicalStylist.load(save_path=save_path, vae=vae, device=device)
 
     prepared_chars = prepare_chars(chars, charname2radicaljson, rs.radicalname2idx)
     images_list = rs.sample(prepared_chars, writers)

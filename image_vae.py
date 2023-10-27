@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 
 import torchvision
 
@@ -6,7 +7,15 @@ from diffusers import AutoencoderKL
 
 
 class StableDiffusionVae:
-    def __init__(self, stable_diffusion_path, image_size, device):
+    device: torch.device
+
+    vae: AutoencoderKL
+
+    transforms: nn.Module
+
+    latent_channels: int
+
+    def __init__(self, stable_diffusion_path: str, device: torch.device):
         self.device = device
         
         self.vae = AutoencoderKL.from_pretrained(stable_diffusion_path, subfolder="vae").to(self.device)
@@ -14,9 +23,11 @@ class StableDiffusionVae:
         
         self.transforms = torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         
-        self.image_size = image_size // 8
-        self.num_channels = 4
+        self.latent_channels = 4
     
+    def calc_latent_size(self, image_size: int):
+        return image_size // 8
+        
     def encode(self, images):
         images = self.transforms(images)
         images = images.to(dtype=torch.float32, device=self.device)
