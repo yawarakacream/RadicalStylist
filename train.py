@@ -43,7 +43,7 @@ def main(
     
     device: torch.device,
 ):
-    print(f"save: {save_path}")
+    print(f"save_path: {save_path}")
     
     charname2radicaljson = create_charname2radicaljson(radicals_data_path)
     
@@ -120,6 +120,7 @@ def main(
         
         device,
     )
+    radical_stylist.save(exist_ok=False)
     print("initialized")
         
     print("training started")

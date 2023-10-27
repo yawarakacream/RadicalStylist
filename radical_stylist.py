@@ -14,7 +14,7 @@ from torch import optim, nn
 from diffusion import EMA, Diffusion
 from image_vae import StableDiffusionVae
 from unet import UNetModel
-from utility import save_images
+from utility import pathstr, save_images
 
 
 class RadicalStylist:
@@ -45,20 +45,11 @@ class RadicalStylist:
         self.device = device
         
         self.save_path = save_path
-        os.makedirs(self.save_path, exist_ok=True)
         
         self.radicalname2idx = radicalname2idx
-        with open(os.path.join(self.save_path, "radicalname2idx.json"), "w") as f:
-            json.dump(self.radicalname2idx, f)
-        
         self.writername2idx = writername2idx
-        if self.writername2idx is not None:
-            with open(os.path.join(self.save_path, "writername2idx.json"), "w") as f:
-                json.dump(self.writername2idx, f)
         
         self.vae = vae
-
-        # model info
         
         self.image_size = image_size
         self.dim_char_embedding = dim_char_embedding
@@ -71,22 +62,6 @@ class RadicalStylist:
         self.diffusion_noise_steps = diffusion_noise_steps
         self.diffusion_beta_start = diffusion_beta_start
         self.diffusion_beta_end = diffusion_beta_end
-        
-        with open(os.path.join(self.save_path, "model_info.json"), "w") as f:
-            info = {
-                "image_size": self.image_size,
-                "dim_char_embedding": self.dim_char_embedding,
-                "char_length": self.char_length,
-                "num_res_blocks": self.num_res_blocks,
-                "num_heads": self.num_heads,
-                
-                "learning_rate": self.learning_rate,
-                "ema_beta": self.ema_beta,
-                "diffusion_noise_steps": self.diffusion_noise_steps,
-                "diffusion_beta_start": self.diffusion_beta_start,
-                "diffusion_beta_end": self.diffusion_beta_end,
-            }
-            json.dump(info, f)
         
         # create layers
         
@@ -121,11 +96,11 @@ class RadicalStylist:
     
     @staticmethod
     def load(save_path: str, vae: StableDiffusionVae, device: torch.device):
-        print("loading RadicalStylist...")
-        
         if not os.path.exists(save_path):
             raise Exception(f"not found: {save_path}")
-            
+
+        print("loading RadicalStylist...")
+        
         with open(os.path.join(save_path, "radicalname2idx.json")) as f:
             radicalname2idx = json.load(f)
         
@@ -175,20 +150,20 @@ class RadicalStylist:
         
         print("\tloading UNetModel...")
         
-        instance.unet.load_state_dict(torch.load(os.path.join(save_path, "models", "unet.pt")))
+        instance.unet.load_state_dict(torch.load(pathstr(save_path, "models", "unet.pt")))
         instance.unet.eval()
         
         print("\tloaded.")
         
         print("\tloading optimizer...")
         
-        instance.optimizer.load_state_dict(torch.load(os.path.join(save_path, "models", "optimizer.pt")))
+        instance.optimizer.load_state_dict(torch.load(pathstr(save_path, "models", "optimizer.pt")))
         
         print("\tloaded.")
         
         print("\tloading EMA...")
         
-        instance.ema_model.load_state_dict(torch.load(os.path.join(save_path, "models", "ema_model.pt")))
+        instance.ema_model.load_state_dict(torch.load(pathstr(save_path, "models", "ema_model.pt")))
         instance.ema_model.eval()
         
         print("\tloaded.")
@@ -197,12 +172,46 @@ class RadicalStylist:
         
         return instance
     
+    def save(self, *, exist_ok=True):
+        if (not exist_ok) and os.path.exists(self.save_path):
+            raise Exception(f"already exists: {self.save_path}")
+
+        os.makedirs(self.save_path, exist_ok=True)
+
+        with open(pathstr(self.save_path, "radicalname2idx.json"), "w") as f:
+            json.dump(self.radicalname2idx, f)
+
+        if self.writername2idx is not None:
+            with open(pathstr(self.save_path, "writername2idx.json"), "w") as f:
+                json.dump(self.writername2idx, f)
+
+        with open(pathstr(self.save_path, "model_info.json"), "w") as f:
+            info = {
+                "image_size": self.image_size,
+                "dim_char_embedding": self.dim_char_embedding,
+                "char_length": self.char_length,
+                "num_res_blocks": self.num_res_blocks,
+                "num_heads": self.num_heads,
+                
+                "learning_rate": self.learning_rate,
+                "ema_beta": self.ema_beta,
+                "diffusion_noise_steps": self.diffusion_noise_steps,
+                "diffusion_beta_start": self.diffusion_beta_start,
+                "diffusion_beta_end": self.diffusion_beta_end,
+            }
+            json.dump(info, f)
+
+        os.makedirs(pathstr(self.save_path, "models"), exist_ok=True)
+
+        torch.save(self.unet.state_dict(), pathstr(self.save_path, "models", "unet.pt"))
+        torch.save(self.optimizer.state_dict(), pathstr(self.save_path, "models", "optimizer.pt"))
+        torch.save(self.ema_model.state_dict(), pathstr(self.save_path, "models", "ema_model.pt"))
+
+        os.makedirs(pathstr(self.save_path, "generated"), exist_ok=True)
+
     def train(self, dataloader, epochs, test_chars, test_writers):
-        if os.path.exists(os.path.join(self.save_path, "train_info.json")):
+        if os.path.exists(pathstr(self.save_path, "train_info.json")):
             raise Exception("already trained")
-        
-        os.makedirs(os.path.join(self.save_path, "models"))
-        os.makedirs(os.path.join(self.save_path, "generated"))
         
         num_epochs_digit = len(str(epochs))
         num_test_chars_digit = len(str(len(test_chars)))
@@ -251,7 +260,6 @@ class RadicalStylist:
                 
                 loss = loss.item()
                 loss_list[-1] += loss
-                
                 pbar.set_postfix(loss=loss)
             
             loss_list[-1] /= len(pbar)
@@ -266,12 +274,8 @@ class RadicalStylist:
                         f"test_{str(i).zfill(num_test_chars_digit)}_{str(epoch + 1).zfill(num_epochs_digit)}.jpg")
                     save_images(images, path)
 
-                torch.save(self.unet.state_dict(), os.path.join(self.save_path, "models", "unet.pt"))
-                torch.save(self.optimizer.state_dict(), os.path.join(self.save_path, "models", "optimizer.pt"))
-                torch.save(self.ema_model.state_dict(), os.path.join(self.save_path, "models", "ema_model.pt"))
-                
                 with open(os.path.join(self.save_path, "train_info.json"), "w") as f:
-                    info = {
+                    train_info = {
                         "dataloader": {
                             "batch_size": dataloader.batch_size,
                             "dataset": dataloader.dataset.info,
@@ -283,7 +287,9 @@ class RadicalStylist:
                             "writers": test_writers,
                         },
                     }
-                    json.dump(info, f)
+                    json.dump(train_info, f)
+
+                self.save()
 
     def sample(self, chars, writers):
         if isinstance(writers, int):
