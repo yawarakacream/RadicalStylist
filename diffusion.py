@@ -1,4 +1,4 @@
-from tqdm import tqdm
+from tqdm import trange
 
 import torch
 
@@ -83,7 +83,7 @@ class Diffusion:
         
         x = torch.randn((n, self.num_image_channels, self.image_size, self.image_size), device=self.device)
 
-        for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
+        for i in reversed(trange(1, self.noise_steps, position=0)):
             t = torch.ones(n, dtype=torch.long, device=self.device) * i
             predicted_noise = unet(x, t, chars, writerindices)
 
