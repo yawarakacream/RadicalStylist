@@ -1,6 +1,5 @@
 import json
 import os
-from typing import Any
 
 import torch
 
@@ -9,7 +8,7 @@ import torchvision
 from PIL import Image
 
 
-def pathstr(*s):
+def pathstr(*s: str) -> str:
     return os.path.abspath(os.path.expanduser(os.path.join(*s)))
 
 
@@ -39,12 +38,12 @@ def rgb_to_grayscale(image):
     return torchvision.transforms.functional.rgb_to_grayscale(image, num_output_channels=3) # type: ignore
 
 
-def char2code(char):
-    return format(ord(char), '#06x')
+def char2code(char: str) -> str:
+    return format(ord(char), "#06x")
 
 
-# def code2char(code):
-#     chr(int(code, base=16))
+# def code2char(code: str) -> str:
+#     return chr(int(code, base=16))
 
 
 def create_charname2radicaljson(radicals_data_path: str):

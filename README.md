@@ -37,5 +37,5 @@ python train.py
 ### サンプリング
 
 ```
-python sampling
+python sample.py
 ```

@@ -37,7 +37,7 @@ def main(
     
     device: torch.device,
 ):
-    print(f"save: {save_path}")
+    print(f"save_path: {save_path}")
     
     charname2radicaljson = create_charname2radicaljson(radicals_data_path)
 
@@ -49,15 +49,20 @@ def main(
     images_list = rs.sample(prepared_chars, writers)
 
     save_directory = pathstr(rs.save_path, "generated")
+
     for i, (char, images) in enumerate(zip(prepared_chars, images_list)):
         if isinstance(writers, int):
-            path = pathstr(save_directory, f"trained_{char2code(char.name)}.jpg")
+            path = f"trained_{char2code(char.name or '?')}"
         elif isinstance(writers, list):
-            path = pathstr(save_directory, f"trained_{char2code(char.name)}_{writers[i]}.jpg")
+            path = f"trained_{char2code(char.name or '?')}_{writers[i]}"
 
-        c = len(glob(pathstr(save_directory, f"{path}*.jpg")))
+        path = pathstr(save_directory, path)
+
+        c = len(glob(f"{path}*.jpg"))
         if 0 < c:
             path += f" ({c})"
+        
+        path += ".png"
 
         save_images(images, path)
 
@@ -68,7 +73,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     main(
-        save_path=pathstr("./output/rs test"),
+        save_path=pathstr("./output/rs ignore_writer ETL8G_400"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
         radicals_data_path=pathstr("~/datadisk/dataset/kanjivg/build/all.json"),
 
@@ -85,7 +90,7 @@ if __name__ == "__main__":
             # 訓練データにないが部首データにある字
             *"倹困麻諭",
         ],
-        # writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
+        # # writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
         writers=8,
 
         device=torch.device(args.device),

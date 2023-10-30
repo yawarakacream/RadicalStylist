@@ -979,7 +979,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
     
-    def forward(self, x, timesteps=None, chars=None, writers_idx=None, mix_rate=None, **kwargs):
+    def forward(self, x, timesteps=None, chars=None, writers_idx=None, **_kwargs):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.

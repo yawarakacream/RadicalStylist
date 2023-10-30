@@ -11,7 +11,7 @@ def main(
     save_path: str,
     stable_diffusion_path: str,
 
-    image_paths: str,
+    image_paths: list[str],
     
     device: torch.device,
 ) -> None:
@@ -30,13 +30,16 @@ def main(
     images = torch.stack([read_image_as_tensor(p) for p in image_paths])
     latents = vae.encode(images)
 
-    probabilities = rscf.predict_radicals(latents, one_hot=False)[0]
+    probabilities = rscf.predict_radicals(latents)
 
-    ranks = [(p, i) for i, p in enumerate(probabilities) if 0.5 < p.item()]
-    ranks.sort(reverse=True)
+    for probs, image_path in zip(probabilities, image_paths):
+        print(image_path)
 
-    for p, idx in ranks:
-        print(f"{radicalidx2name[idx]} (p = {p})")
+        ranks = [(p, i) for i, p in enumerate(probs) if 0.5 < p.item()]
+        ranks.sort(reverse=True)
+
+        for p, idx in ranks:
+            print(f"{radicalidx2name[idx]} (p = {p})")
 
 
 if __name__ == "__main__":

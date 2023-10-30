@@ -12,6 +12,7 @@ from utility import pathstr, rgb_to_grayscale
 from image_vae import StableDiffusionVae
 
 
+# https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
 class RadicalClassifier(nn.Module):
     def __init__(self, image_size: int, image_channels: int, num_radicals: int):
         super(RadicalClassifier, self).__init__()
@@ -82,6 +83,7 @@ class RSClassifier:
         self.vae = vae
         
         self.radicalname2idx = radicalname2idx
+        self.radicalidx2name = {idx: name for name, idx in radicalname2idx.items()}
         
         self.image_size = image_size
         self.grayscale = grayscale
@@ -94,6 +96,7 @@ class RSClassifier:
             image_channels=self.vae.latent_channels,
             num_radicals=len(radicalname2idx),
         ).to(device=device)
+        self.classifier.requires_grad_(True)
         self.optimizer = optim.AdamW(self.classifier.parameters(), lr=learning_rate)
 
     @staticmethod
@@ -172,7 +175,7 @@ class RSClassifier:
         answers = torch.tensor(answers, dtype=dtype, device=self.device)
         return answers
     
-    def predict_radicals(self, latents, one_hot=True):
+    def predict_radicals(self, latents, one_hot=False):
         predictions = self.classifier(latents)
         predictions = torch.sigmoid(predictions)
         if one_hot:
@@ -187,7 +190,6 @@ class RSClassifier:
 
         epochs: int,
     ):
-        self.classifier.requires_grad_(True)
         self.classifier.train()
         
         criterion = nn.BCEWithLogitsLoss(
@@ -269,7 +271,7 @@ class RSClassifier:
             
             # ap_count
             radical_answers = torch.flatten(self.prepare_answers(chars))
-            radical_predictions = torch.flatten(self.predict_radicals(latents))
+            radical_predictions = torch.flatten(self.predict_radicals(latents, one_hot=True))
             for a, p in ((0, 0), (0, 1), (1, 0), (1, 1)):
                 ap_count[a, p] += torch.count_nonzero(
                     torch.logical_and(radical_answers == a, radical_predictions == p).long()

@@ -149,25 +149,19 @@ class RadicalStylist:
         )
         
         print("\tloading UNetModel...")
-        
         instance.unet.load_state_dict(torch.load(pathstr(save_path, "models", "unet.pt")))
         instance.unet.eval()
-        
         print("\tloaded.")
-        
+
         print("\tloading optimizer...")
-        
         instance.optimizer.load_state_dict(torch.load(pathstr(save_path, "models", "optimizer.pt")))
-        
         print("\tloaded.")
-        
+
         print("\tloading EMA...")
-        
         instance.ema_model.load_state_dict(torch.load(pathstr(save_path, "models", "ema_model.pt")))
         instance.ema_model.eval()
-        
         print("\tloaded.")
-        
+
         print("loaded.")
         
         return instance
@@ -291,6 +285,7 @@ class RadicalStylist:
 
                 self.save()
 
+    @torch.no_grad()
     def sample(self, chars, writers):
         if isinstance(writers, int):
             assert 0 < writers
@@ -323,9 +318,12 @@ class RadicalStylist:
         else:
             raise Exception()
             
-        sampled = self.diffusion.sampling(self.ema_model, chars, writerindices)
-        sampled = self.vae.decode(sampled)
+        sampled_latents = self.diffusion.sample(self.ema_model, chars, writerindices)
+        sampled_images = self.vae.decode(sampled_latents)
         
         # char 毎にして返す
-        ret = [sampled[i:(i + n_per_chars)] for i in range(0, sampled.shape[0], n_per_chars)]
+        ret = [
+            sampled_images[i:(i + n_per_chars)]
+            for i in range(0, sampled_images.size(0), n_per_chars)
+        ]
         return ret

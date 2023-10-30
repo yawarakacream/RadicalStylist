@@ -1,6 +1,5 @@
 from tqdm import tqdm
 
-import numpy as np
 import torch
 
 
@@ -39,6 +38,8 @@ class EMA:
 
 
 # https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/train.py#L154
+# https://github.com/dome272/Diffusion-Models-pytorch/blob/be352208d0576039fec061238c0e4385a562a2d4/ddpm_conditional.py#L16
+# https://www.casualganpapers.com/guided_diffusion_langevin_dynamics_classifier_guidance/Guided-Diffusion-explained.html
 class Diffusion:
     def __init__(self, image_size, num_image_channels, noise_steps=1000, beta_start=1e-4, beta_end=0.02, device=None):
         self.device = device
@@ -67,24 +68,27 @@ class Diffusion:
         return torch.randint(low=1, high=self.noise_steps, size=(n,), device=self.device)
 
     @torch.no_grad()
-    def sampling(self, unet, chars, writers_idx, mix_rate=None, cfg_scale=3):
+    def sample(
+        self,
+        unet,
+        chars,
+        writerindices,
+        cfg_scale=3, # classifier-free guidance scale
+    ):
         unet.eval()
         
         n = len(chars)
         
-        if writers_idx is None:
-            pass
-        else:
-            assert n == writers_idx.shape[0]
-
+        assert (writerindices is None) or (writerindices.size(0) == n)
+        
         x = torch.randn((n, self.num_image_channels, self.image_size, self.image_size), device=self.device)
 
         for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
             t = torch.ones(n, dtype=torch.long, device=self.device) * i
-            predicted_noise = unet(x, t, chars, writers_idx, mix_rate=mix_rate)
+            predicted_noise = unet(x, t, chars, writerindices)
 
             if cfg_scale > 0:
-                uncond_predicted_noise = unet(x, t, chars, writers_idx, mix_rate)
+                uncond_predicted_noise = unet(x, t, chars, None)
                 predicted_noise = torch.lerp(uncond_predicted_noise, predicted_noise, cfg_scale)
 
             alpha = self.alpha[t][:, None, None, None]
@@ -99,5 +103,4 @@ class Diffusion:
             x = 1 / torch.sqrt(alpha) * (x - ((1 - alpha) / (torch.sqrt(1 - alpha_hat))) * predicted_noise) + torch.sqrt(beta) * noise
 
         unet.train()
-        
         return x
