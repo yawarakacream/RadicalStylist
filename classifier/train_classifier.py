@@ -2,7 +2,7 @@ import argparse
 
 import torch
 
-from classifier import RSClassifier
+from classifier.classifier import RSClassifier
 from dataset import RSDataset, create_dataloader
 from image_vae import StableDiffusionVae
 from utility import pathstr, create_charname2radicaljson

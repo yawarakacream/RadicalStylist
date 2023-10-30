@@ -2,7 +2,7 @@ import argparse
 
 import torch
 
-from classifier import RSClassifier
+from classifier.classifier import RSClassifier
 from image_vae import StableDiffusionVae
 from utility import pathstr, read_image_as_tensor
 
