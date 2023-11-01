@@ -2,6 +2,7 @@ import copy
 import json
 import os
 import sys
+from typing import Optional
 
 if not all(map(lambda p: p.endswith("stable_diffusion"), sys.path)):
     sys.path.append(os.path.join(os.path.dirname(__file__), "stable_diffusion"))
@@ -21,24 +22,24 @@ class RadicalStylist:
     def __init__(
         self,
         
-        save_path,
+        save_path: str,
         
-        radicalname2idx,
-        writername2idx,
+        radicalname2idx: dict[str, int],
+        writername2idx: Optional[dict[str, int]],
 
-        vae,
+        vae: StableDiffusionVae,
         
-        image_size,
-        dim_char_embedding,
-        char_length,
-        num_res_blocks,
-        num_heads,
+        image_size: int,
+        dim_char_embedding: int,
+        len_radicals_of_char: int,
+        num_res_blocks: int,
+        num_heads: int,
         
-        learning_rate,
-        ema_beta,
-        diffusion_noise_steps,
-        diffusion_beta_start,
-        diffusion_beta_end,
+        learning_rate: float,
+        ema_beta: float,
+        diffusion_noise_steps: int,
+        diffusion_beta_start: float,
+        diffusion_beta_end: float,
         
         device,
     ):
@@ -53,7 +54,7 @@ class RadicalStylist:
         
         self.image_size = image_size
         self.dim_char_embedding = dim_char_embedding
-        self.char_length = char_length
+        self.len_radicals_of_char = len_radicals_of_char
         self.num_res_blocks = num_res_blocks
         self.num_heads = num_heads
         
@@ -77,7 +78,7 @@ class RadicalStylist:
             num_heads=self.num_heads,
             context_dim=self.dim_char_embedding,
             vocab_size=len(self.radicalname2idx),
-            char_length=char_length,
+            len_radicals_of_char=len_radicals_of_char,
         ).to(device)
         
         self.optimizer = optim.AdamW(self.unet.parameters(), lr=self.learning_rate)
@@ -99,8 +100,6 @@ class RadicalStylist:
         if not os.path.exists(save_path):
             raise Exception(f"not found: {save_path}")
 
-        print("loading RadicalStylist...")
-        
         with open(os.path.join(save_path, "radicalname2idx.json")) as f:
             radicalname2idx = json.load(f)
         
@@ -115,7 +114,7 @@ class RadicalStylist:
             
             image_size = model_info["image_size"]
             dim_char_embedding = model_info["dim_char_embedding"]
-            char_length = model_info["char_length"]
+            len_radicals_of_char = model_info["len_radicals_of_char"]
             num_res_blocks = model_info["num_res_blocks"]
             num_heads = model_info["num_heads"]
             
@@ -135,7 +134,7 @@ class RadicalStylist:
 
             image_size,
             dim_char_embedding,
-            char_length,
+            len_radicals_of_char,
             num_res_blocks,
             num_heads,
 
@@ -148,21 +147,13 @@ class RadicalStylist:
             device,
         )
         
-        print("\tloading UNetModel...")
         instance.unet.load_state_dict(torch.load(pathstr(save_path, "models", "unet.pt")))
         instance.unet.eval()
-        print("\tloaded.")
 
-        print("\tloading optimizer...")
         instance.optimizer.load_state_dict(torch.load(pathstr(save_path, "models", "optimizer.pt")))
-        print("\tloaded.")
 
-        print("\tloading EMA...")
         instance.ema_model.load_state_dict(torch.load(pathstr(save_path, "models", "ema_model.pt")))
         instance.ema_model.eval()
-        print("\tloaded.")
-
-        print("loaded.")
         
         return instance
     
@@ -183,7 +174,7 @@ class RadicalStylist:
             info = {
                 "image_size": self.image_size,
                 "dim_char_embedding": self.dim_char_embedding,
-                "char_length": self.char_length,
+                "len_radicals_of_char": self.len_radicals_of_char,
                 "num_res_blocks": self.num_res_blocks,
                 "num_heads": self.num_heads,
                 
@@ -265,7 +256,7 @@ class RadicalStylist:
                     path = os.path.join(
                         self.save_path,
                         "generated",
-                        f"test_{str(i).zfill(num_test_chars_digit)}_{str(epoch + 1).zfill(num_epochs_digit)}.jpg")
+                        f"test_{str(i).zfill(num_test_chars_digit)}_{str(epoch + 1).zfill(num_epochs_digit)}.png")
                     save_images(images, path)
 
                 with open(os.path.join(self.save_path, "train_info.json"), "w") as f:
@@ -288,6 +279,7 @@ class RadicalStylist:
     @torch.no_grad()
     def sample(self, chars, writers):
         if isinstance(writers, int):
+            assert self.writername2idx is None
             assert 0 < writers
             
             n_per_chars = writers
@@ -301,7 +293,8 @@ class RadicalStylist:
             writerindices = None
         
         elif isinstance(writers, list):
-            assert isinstance(writers[0], str)
+            assert self.writername2idx is not None
+            assert all(map(lambda w: isinstance(w, str), writers))
             
             n_per_chars = len(writers)
             

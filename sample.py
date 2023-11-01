@@ -43,7 +43,9 @@ def main(
 
     vae = StableDiffusionVae(stable_diffusion_path, device)
 
+    print("loading RadicalStylist...")
     rs = RadicalStylist.load(save_path=save_path, vae=vae, device=device)
+    print("loaded.")
 
     prepared_chars = prepare_chars(chars, charname2radicaljson, rs.radicalname2idx)
     images_list = rs.sample(prepared_chars, writers)
@@ -58,7 +60,7 @@ def main(
 
         path = pathstr(save_directory, path)
 
-        c = len(glob(f"{path}*.jpg"))
+        c = len(glob(f"{path}*.png"))
         if 0 < c:
             path += f" ({c})"
         
@@ -90,7 +92,7 @@ if __name__ == "__main__":
             # 訓練データにないが部首データにある字
             *"倹困麻諭",
         ],
-        # # writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
+        # writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
         writers=8,
 
         device=torch.device(args.device),
