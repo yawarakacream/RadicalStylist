@@ -97,7 +97,7 @@ def main(
 
     vae = StableDiffusionVae(stable_diffusion_path, device)
     
-    print("initializing RadicalStylist")
+    print("initializing RadicalStylist...")
     radical_stylist = RadicalStylist(
         save_path,
         
@@ -121,11 +121,11 @@ def main(
         device,
     )
     radical_stylist.save(exist_ok=False)
-    print("initialized")
+    print("initialized.")
         
-    print("training started")
+    print("training started!")
     radical_stylist.train(dataloader, epochs, test_chars, test_writers)
-    print("training finished")
+    print("training finished!")
 
 
 if __name__ == "__main__":
@@ -134,12 +134,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     main(
-        save_path=pathstr("./output/rs test"),
+        save_path=pathstr("./output/rs test encode_type=2"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
         radicals_data_path=pathstr("~/datadisk/dataset/kanjivg/build/all.json"),
 
         image_size=64,
-        dim_char_embedding=384,
+        dim_char_embedding=768,
         char_length=12,
         learn_writer=False,
         num_res_blocks=1,
