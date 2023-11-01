@@ -4,6 +4,7 @@ import os
 import torch
 
 import torchvision
+from torchvision.transforms import functional as TVF
 
 from PIL import Image
 
@@ -23,19 +24,17 @@ def save_images(images, path):
 
 
 def save_single_image(image, path):
-    image = torchvision.transforms.ToPILImage()(image)
+    image = TVF.to_pil_image(image)
     image.save(path)
     return image
 
 
 def read_image_as_tensor(image_path):
-    return torchvision.transforms.functional.to_tensor( # type: ignore
-        Image.open(image_path).convert("RGB")
-    )
+    return TVF.to_tensor(Image.open(image_path).convert("RGB"))
 
 
 def rgb_to_grayscale(image):
-    return torchvision.transforms.functional.rgb_to_grayscale(image, num_output_channels=3) # type: ignore
+    return TVF.rgb_to_grayscale(image, num_output_channels=3)
 
 
 def char2code(char: str) -> str:
