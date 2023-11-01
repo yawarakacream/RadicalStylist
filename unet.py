@@ -1,7 +1,5 @@
-import math
 from abc import abstractmethod
-
-import numpy as np
+from typing import Optional
 
 import torch
 from torch import einsum, nn
@@ -28,6 +26,9 @@ from stable_diffusion.ldm.modules.diffusionmodules.openaimodel import (
     Upsample,
     Downsample,
 )
+
+from character import Char
+from character_encoder import CharacterEncoder
 
 
 # https://github.com/CompVis/stable-diffusion/blob/21f890f9da3cfbeaba8e2ac3c425ee9e998d5229/ldm/modules/diffusionmodules/util.py#L102
@@ -91,6 +92,7 @@ class CrossAttention(nn.Module):
         super().__init__()
         inner_dim = dim_head * heads
         context_dim = default(context_dim, query_dim)
+        assert isinstance(context_dim, int)
 
         self.scale = dim_head ** -0.5
         self.heads = heads
@@ -122,7 +124,7 @@ class CrossAttention(nn.Module):
         if exists(mask):
             mask = rearrange(mask, 'b j -> b 1 1 j')
             max_neg_value = -torch.finfo(sim.dtype).max
-            sim.masked_fill_(~mask, max_neg_value)
+            sim.masked_fill_(~mask, max_neg_value) # type: ignore
 
         # attention, what we cannot get enough of
         attn = sim.softmax(dim=-1)
@@ -192,6 +194,7 @@ class SpatialTransformer(nn.Module):
                                               stride=1,
                                               padding=0))
         self.part = part
+
     def forward(self, x, context=None):
         # note: if no context is given, cross-attention defaults to self-attention
         #print('x spatial trans in', x.shape)
@@ -250,7 +253,7 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
 
 
 # https://github.com/CompVis/stable-diffusion/blob/21f890f9da3cfbeaba8e2ac3c425ee9e998d5229/ldm/modules/diffusionmodules/openaimodel.py#L163
-# TimestepBlock が書き変わっているため．
+# checkpoint, TimestepBlock が書き変わっているため．
 class ResBlock(TimestepBlock):
     """
     A residual block that can optionally change the number of channels.
@@ -371,6 +374,7 @@ class ResBlock(TimestepBlock):
     
     
 # https://github.com/CompVis/stable-diffusion/blob/21f890f9da3cfbeaba8e2ac3c425ee9e998d5229/ldm/modules/diffusionmodules/openaimodel.py#L278
+# checkpoint が書き変わっているため．
 # qkv, proj_out の conv の次元が違う（意図的なのか？）．
 class AttentionBlock(nn.Module):
     """
@@ -421,253 +425,6 @@ class AttentionBlock(nn.Module):
         return (x + h).reshape(b, c, *spatial)
 
 
-##################################################################################
-
-
-# https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/unet.py#L688
-class CharAttention(nn.Module):
-    def __init__(self, input_size, hidden_size):
-        super(CharAttention, self).__init__()
-        self.query = nn.Linear(input_size, hidden_size)
-        self.key = nn.Linear(input_size, hidden_size)
-        self.value = nn.Linear(input_size, hidden_size)
-        self.softmax = nn.Softmax(dim=-1)
-        
-    def forward(self, x):
-        """
-        :param x: (batch_size, sequence_length, input_size)
-        """
-        
-        query = self.query(x)
-        key = self.key(x)
-        value = self.value(x)
-        
-        # Calculate attention scores
-        scores = query @ key.transpose(-2, -1)
-        scores = self.softmax(scores)
-        
-        # Calculate weighted sum of the values
-        rads_embs = scores @ value
-        return rads_embs
-
-
-# https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/unet.py#L711
-class CharEncoder(nn.Module):
-    def __init__(self, input_size, hidden_size, char_length):
-        super(CharEncoder, self).__init__()
-        
-        self.embedding_dim = hidden_size
-        self.char_length = char_length
-        
-        self.embedding = nn.Embedding(input_size, hidden_size, max_norm=1)
-        self.attention = CharAttention(hidden_size, hidden_size)
-        
-        # 部首埋め込み (正規化されている) に掛ける係数
-        self.rad_emb_norm = 1
-        
-        # 位置埋め込みの精度
-        self.pos_enc_precision = 1000
-        
-        # 位置埋め込みの前計算
-        self.pos_enc_list = [] # [i][p * k] -> encoding tensor
-        
-        pos_enc_type = 4
-        print(f"{pos_enc_type=}")
-        
-        if pos_enc_type == 0:
-            self.rad_emb_norm = ((self.embedding_dim / 2) ** 0.5) * 4 # 埋め込みのノルムの分
-            
-            for i in range(4):
-                T = 1000 * (i + 1)
-                
-                self.pos_enc_list.append([])
-                for p in np.linspace(0, 1, self.pos_enc_precision):
-                    self.pos_enc_list[-1].append(torch.zeros(self.embedding_dim))
-
-                    for i in range(0, self.embedding_dim, 2):
-                        theta = (p * self.embedding_dim) / (T ** (i / self.embedding_dim))
-                        self.pos_enc_list[-1][-1][i] = math.sin(theta)
-                        self.pos_enc_list[-1][-1][i + 1] = math.cos(theta)
-
-                    assert (
-                        abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4)
-                        < 1e-4
-                    )
-        
-        elif pos_enc_type == 1:
-            assert self.embedding_dim % 12 == 0
-            
-            self.rad_emb_norm = ((self.embedding_dim / 2) ** 0.5) * 4 # 埋め込みのノルムの分
-            
-            for _ in range(4):
-                T = 1000
-                
-                self.pos_enc_list.append([])
-                for p in np.linspace(0, 1, self.pos_enc_precision):
-                    self.pos_enc_list[-1].append(torch.zeros(self.embedding_dim))
-                    
-                    for i in range(0, self.embedding_dim, 12):
-                        theta = (p * self.embedding_dim) / (T ** (i / self.embedding_dim))
-                        
-                        self.pos_enc_list[-1][-1][i + 0] = math.sin(theta)
-                        self.pos_enc_list[-1][-1][i + 1] = math.sin(theta)
-                        self.pos_enc_list[-1][-1][i + 2] = math.sin(theta)
-                        self.pos_enc_list[-1][-1][i + 3] = math.sin(theta)
-                        self.pos_enc_list[-1][-1][i + 4] = math.sin(theta)
-                        self.pos_enc_list[-1][-1][i + 5] = math.sin(theta)
-                        
-                        self.pos_enc_list[-1][-1][i + 6] = math.cos(theta)
-                        self.pos_enc_list[-1][-1][i + 7] = math.cos(theta)
-                        self.pos_enc_list[-1][-1][i + 8] = math.cos(theta)
-                        self.pos_enc_list[-1][-1][i + 9] = math.cos(theta)
-                        self.pos_enc_list[-1][-1][i + 10] = math.cos(theta)
-                        self.pos_enc_list[-1][-1][i + 11] = math.cos(theta)
-                    
-                    assert (
-                        abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4)
-                        < 1e-4
-                    )
-                
-            for i_p in range(len(self.pos_enc_list[0])):
-                for i in range(0, self.embedding_dim, 6):
-                    self.pos_enc_list[0][i_p][i + 0] *= -1
-                    self.pos_enc_list[1][i_p][i + 0] *= -1
-                    
-                    self.pos_enc_list[0][i_p][i + 1] *= -1
-                    self.pos_enc_list[2][i_p][i + 1] *= -1
-                    
-                    self.pos_enc_list[0][i_p][i + 2] *= -1
-                    self.pos_enc_list[3][i_p][i + 2] *= -1
-                    
-                    self.pos_enc_list[1][i_p][i + 3] *= -1
-                    self.pos_enc_list[2][i_p][i + 3] *= -1
-                    
-                    self.pos_enc_list[1][i_p][i + 4] *= -1
-                    self.pos_enc_list[3][i_p][i + 4] *= -1
-                    
-                    self.pos_enc_list[2][i_p][i + 5] *= -1
-                    self.pos_enc_list[3][i_p][i + 5] *= -1
-                    
-        elif pos_enc_type == 2:
-            assert self.embedding_dim % 4 == 0
-            
-            self.rad_emb_norm = ((self.embedding_dim / 2) ** 0.5) * 4 # 埋め込みのノルムの分
-            
-            for _ in range(4):
-                T = 1000
-                
-                self.pos_enc_list.append([])
-                for p in np.linspace(0, 1, self.pos_enc_precision):
-                    self.pos_enc_list[-1].append(torch.zeros(self.embedding_dim))
-                    
-                    for i in range(0, self.embedding_dim, 4):
-                        theta = (p * self.embedding_dim) / (T ** (i / self.embedding_dim))
-                        
-                        self.pos_enc_list[-1][-1][i + 0] = math.sin(theta)
-                        self.pos_enc_list[-1][-1][i + 1] = math.cos(theta)
-                        self.pos_enc_list[-1][-1][i + 2] = math.sin(theta)
-                        self.pos_enc_list[-1][-1][i + 3] = math.cos(theta)
-                    
-                    assert (
-                        abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4)
-                        < 1e-4
-                    )
-                
-            for i_p in range(len(self.pos_enc_list[0])):
-                for i in range(0, self.embedding_dim, 4):
-                    self.pos_enc_list[0][i_p][i + 0] *= -1
-                    self.pos_enc_list[1][i_p][i + 1] *= -1
-                    self.pos_enc_list[2][i_p][i + 2] *= -1
-                    self.pos_enc_list[3][i_p][i + 3] *= -1
-                    
-        elif pos_enc_type == 3:
-            assert self.embedding_dim % 8 == 0
-            
-            self.rad_emb_norm = ((self.embedding_dim / 8) ** 0.5) * 4 # 埋め込みのノルムの分
-            
-            k = self.embedding_dim // 4
-            for d in range(4):
-                T = 1000
-                
-                self.pos_enc_list.append([])
-                for p in np.linspace(0, 1, self.pos_enc_precision):
-                    self.pos_enc_list[-1].append(torch.zeros(self.embedding_dim))
-                    
-                    i_0 = d * k
-                    for i in range(0, k, 2):
-                        theta = p / (T ** (i / k))
-                        
-                        self.pos_enc_list[-1][-1][i_0 + i + 0] = math.sin(theta)
-                        self.pos_enc_list[-1][-1][i_0 + i + 1] = math.cos(theta)
-                    
-                    assert (
-                        abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4)
-                        < 1e-4
-                    )
-                    
-        elif pos_enc_type == 4:
-            assert self.embedding_dim % 8 == 0
-            
-            self.pos_enc_precision = self.embedding_dim - 1 # 位置埋め込みの精度
-            self.rad_emb_norm = ((self.embedding_dim / 8) ** 0.5) * 4 # 埋め込みのノルムの分
-            
-            k = self.embedding_dim // 4
-            for d in range(4):
-                T = 1000
-                
-                self.pos_enc_list.append([])
-                for p in np.linspace(0, 1, self.pos_enc_precision):
-                    self.pos_enc_list[-1].append(torch.zeros(self.embedding_dim))
-                    
-                    i_0 = d * k
-                    for i in range(0, k, 2):
-                        theta = p / (T ** (i / k))
-                        
-                        self.pos_enc_list[-1][-1][i_0 + i + 0] = math.sin(theta)
-                        self.pos_enc_list[-1][-1][i_0 + i + 1] = math.cos(theta)
-                    
-                    assert (
-                        abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4)
-                        < 1e-4
-                    )
-    
-    def forward(self, chars):
-        """
-        :param x: list[list[Radical]], length: batch_size
-        """
-        device = self.embedding.weight.device
-        
-        # バッチ毎にひとつひとつ計算 (最適化したい)
-        rads_embs = []
-        for char in chars:
-            rad_embs = []
-            
-            for radical in char.radicals:
-                idx = torch.tensor([radical.idx], device=device)
-                
-                rad_emb = self.embedding(idx)
-                rad_emb *= self.rad_emb_norm
-                
-                for i, p in enumerate((radical.center_x, radical.center_y, radical.width, radical.height)):
-                    encoding = self.pos_enc_list[i][int(p * self.pos_enc_precision)].to(device)
-                    rad_emb += encoding
-                
-                rad_embs.append(rad_emb)
-                
-            while len(rad_embs) < self.char_length:
-                rad_embs.append(torch.zeros(rad_embs[0].shape, device=device))
-            
-            rad_embs = torch.cat(rad_embs, dim=0)
-            rads_embs.append(rad_embs)
-        
-        rads_embs = torch.stack(rads_embs)
-        rads_embs = self.attention(rads_embs)
-        return rads_embs # (batch_size, char_length, hidden_size)
-
-
-##################################################################################
-
-
 # https://github.com/CompVis/stable-diffusion/blob/21f890f9da3cfbeaba8e2ac3c425ee9e998d5229/ldm/modules/diffusionmodules/openaimodel.py#L413
 class UNetModel(nn.Module):
     """
@@ -701,6 +458,7 @@ class UNetModel(nn.Module):
 
     def __init__(
         self,
+        *,
         image_size,
         in_channels,
         model_channels,
@@ -719,25 +477,14 @@ class UNetModel(nn.Module):
         num_heads_upsample=-1,
         use_scale_shift_norm=False,
         resblock_updown=False,
-        use_new_attention_order=False,
-        # custom
-        use_spatial_transformer=True,    # custom transformer support
+
         transformer_depth=1,              # custom transformer support
-        context_dim=768,                 # custom transformer support
-        vocab_size=256,                  # custom transformer support
-        n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
-        legacy=False,
-        char_length=-1,
+        context_dim: int,                 # custom transformer support
+        vocab_size: int,                  # custom transformer support
+
+        len_radicals_of_char: int,
     ):
         super().__init__()
-        if use_spatial_transformer:
-            assert context_dim is not None, 'Fool!! You forgot to include the dimension of your cross-attention conditioning...'
-
-        if context_dim is not None:
-            assert use_spatial_transformer, 'Fool!! You forgot to use the spatial transformer for your cross-attention conditioning...'
-            from omegaconf.listconfig import ListConfig
-            if type(context_dim) == ListConfig:
-                context_dim = list(context_dim)
 
         if num_heads_upsample == -1:
             num_heads_upsample = num_heads
@@ -763,7 +510,6 @@ class UNetModel(nn.Module):
         self.num_heads = num_heads
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample
-        self.predict_codebook_ids = n_embed is not None
 
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
@@ -772,20 +518,18 @@ class UNetModel(nn.Module):
             nn.Linear(time_embed_dim, time_embed_dim),
         )
         
-        self.char_encoder = CharEncoder(vocab_size, context_dim, char_length)
+        self.char_encoder = CharacterEncoder(vocab_size, context_dim, len_radicals_of_char)
         
         # ==================== INPUT BLOCK ====================
         
         if self.num_classes is not None:
-            self.label_emb = nn.Embedding(num_classes, time_embed_dim)
+            self.label_emb = nn.Embedding(self.num_classes, time_embed_dim)
 
-        self.input_blocks = nn.ModuleList(
-            [
-                TimestepEmbedSequential(
-                    conv_nd(dims, in_channels, model_channels, 3, padding=1)
-                )
-            ]
-        )
+        self.input_blocks = nn.ModuleList([
+            TimestepEmbedSequential(
+                conv_nd(dims, in_channels, model_channels, 3, padding=1)
+            )
+        ])
         self._feature_size = model_channels
         input_block_chans = [model_channels]
         ch = model_channels
@@ -810,17 +554,8 @@ class UNetModel(nn.Module):
                     else:
                         num_heads = ch // num_head_channels
                         dim_head = num_head_channels
-                    if legacy:
-                        # num_heads = 1
-                        dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     layers.append(
-                        AttentionBlock(
-                            ch,
-                            use_checkpoint=use_checkpoint,
-                            num_heads=num_heads,
-                            num_head_channels=dim_head,
-                            use_new_attention_order=use_new_attention_order,
-                        ) if not use_spatial_transformer else SpatialTransformer(
+                        SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
                         )
                     )
@@ -857,9 +592,6 @@ class UNetModel(nn.Module):
         else:
             num_heads = ch // num_head_channels
             dim_head = num_head_channels
-        if legacy:
-            # num_heads = 1
-            dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
 
         # ==================== MIDDLE BLOCK ====================
         
@@ -872,15 +604,9 @@ class UNetModel(nn.Module):
                 use_checkpoint=use_checkpoint,
                 use_scale_shift_norm=use_scale_shift_norm,
             ),
-            AttentionBlock(
-                ch,
-                use_checkpoint=use_checkpoint,
-                num_heads=num_heads,
-                num_head_channels=dim_head,
-                use_new_attention_order=use_new_attention_order,
-            ) if not use_spatial_transformer else SpatialTransformer(
-                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
-                        ),
+            SpatialTransformer(
+                ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
+            ),
             ResBlock(
                 ch,
                 time_embed_dim,
@@ -898,7 +624,7 @@ class UNetModel(nn.Module):
         for level, mult in list(enumerate(channel_mult))[::-1]:
             for i in range(num_res_blocks + 1):
                 ich = input_block_chans.pop()
-                layers = [
+                layers: list[nn.Module] = [
                     ResBlock(
                         ch + ich,
                         time_embed_dim,
@@ -916,17 +642,8 @@ class UNetModel(nn.Module):
                     else:
                         num_heads = ch // num_head_channels
                         dim_head = num_head_channels
-                    if legacy:
-                        #num_heads = 1
-                        dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     layers.append(
-                        AttentionBlock(
-                            ch,
-                            use_checkpoint=use_checkpoint,
-                            num_heads=num_heads_upsample,
-                            num_head_channels=dim_head,
-                            use_new_attention_order=use_new_attention_order,
-                        ) if not use_spatial_transformer else SpatialTransformer(
+                        SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
                         )
                     )
@@ -955,12 +672,6 @@ class UNetModel(nn.Module):
             nn.SiLU(),
             zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
         )
-        if self.predict_codebook_ids:
-            self.id_predictor = nn.Sequential(
-            normalization(ch),
-            nn.Conv2d(model_channels, n_embed, 1),
-            nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
-        )
         
     def convert_to_fp16(self):
         """
@@ -970,7 +681,6 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f16)
         self.output_blocks.apply(convert_module_to_f16)
 
-        
     def convert_to_fp32(self):
         """
         Convert the torso of the model to float32.
@@ -979,15 +689,19 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
     
-    def forward(self, x, timesteps=None, chars=None, writers_idx=None, **_kwargs):
+    def forward(self, x: torch.Tensor, timesteps: torch.Tensor, chars: list[Char], writerindices: Optional[torch.Tensor]):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
         :param timesteps: a 1-D batch of timesteps.
         :param chars: conditioning plugged in via crossattn
-        :param writers_idx: an [N] Tensor of labels, if class-conditional.
+        :param writerindices: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
+
+        batch_size = x.size(0)
+        assert timesteps.size() == (batch_size,)
+        assert len(chars) == batch_size
         
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
@@ -995,12 +709,12 @@ class UNetModel(nn.Module):
         emb = self.time_embed(t_emb)
         
         if self.num_classes is None:
-            assert writers_idx is None
+            assert writerindices is None
         
         else:
-            assert writers_idx is not None
-            assert writers_idx.shape == (x.shape[0],)
-            emb = emb + self.label_emb(writers_idx)
+            assert writerindices is not None
+            assert writerindices.size() == (batch_size,)
+            emb = emb + self.label_emb(writerindices)
         
         chars = self.char_encoder(chars)
         
@@ -1021,7 +735,4 @@ class UNetModel(nn.Module):
             
         h = h.type(x.dtype)
         
-        if self.predict_codebook_ids:
-            return self.id_predictor(h)
-        else:
-            return self.out(h)
+        return self.out(h)
