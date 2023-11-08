@@ -27,8 +27,8 @@ from stable_diffusion.ldm.modules.diffusionmodules.openaimodel import (
     Downsample,
 )
 
-from character import Char
 from character_encoder import CharacterEncoder
+from radical import Radical
 
 
 # https://github.com/CompVis/stable-diffusion/blob/21f890f9da3cfbeaba8e2ac3c425ee9e998d5229/ldm/modules/diffusionmodules/util.py#L102
@@ -689,7 +689,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
     
-    def forward(self, x: torch.Tensor, timesteps: torch.Tensor, chars: list[Char], writerindices: Optional[torch.Tensor]):
+    def forward(self, x: torch.Tensor, timesteps: torch.Tensor, radicallists: list[list[Radical]], writerindices: Optional[torch.Tensor]):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -701,7 +701,7 @@ class UNetModel(nn.Module):
 
         batch_size = x.size(0)
         assert timesteps.size() == (batch_size,)
-        assert len(chars) == batch_size
+        assert len(radicallists) == batch_size
         
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
@@ -716,22 +716,22 @@ class UNetModel(nn.Module):
             assert writerindices.size() == (batch_size,)
             emb = emb + self.label_emb(writerindices)
         
-        chars = self.char_encoder(chars)
+        radicallists = self.char_encoder(radicallists)
         
         h = x.type(self.dtype)
         
         # INPUT BLOCKS
         for module in self.input_blocks:
-            h = module(h, emb, chars)
+            h = module(h, emb, radicallists)
             hs.append(h)
         
         # MIDDLE BLOCK
-        h = self.middle_block(h, emb, chars)
+        h = self.middle_block(h, emb, radicallists)
         
         # OUTPUT BLOCKS
         for module in self.output_blocks:
             h = torch.cat([h, hs.pop()], dim=1)
-            h = module(h, emb, chars)
+            h = module(h, emb, radicallists)
             
         h = h.type(x.dtype)
         

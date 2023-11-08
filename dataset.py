@@ -7,19 +7,16 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 import character_utility
-from character import Char, Radical
+from radical import Radical
 from utility import pathstr, read_image_as_tensor
 
-
-RSDatasetItemType = tuple[str, Char, str] # (image_path, char, writername)
 
 class RSDataset(Dataset):
     charname2radicaljson: dict[str, list[Radical]]
     ignore_kana: bool
+    radical_depth: str
 
-    items: list[RSDatasetItemType]
-    all_charnames: set[str]
-    all_writernames: set[str]
+    items: list[tuple[str, Radical, str]] # (image_path, rootradical, writername)
 
     info: dict[str, Any]
 
@@ -27,20 +24,18 @@ class RSDataset(Dataset):
         self,
 
         charname2radicaljson,
+        radical_depth="max",
         ignore_kana=False,
 
         items=None,
-        all_charnames=None,
-        all_writernames=None,
 
         info=None,
     ):
         self.charname2radicaljson = charname2radicaljson
         self.ignore_kana = ignore_kana
+        self.radical_depth = radical_depth
 
         self.items = items or []
-        self.all_charnames = all_charnames or set()
-        self.all_writernames = all_writernames or set()
 
         self.info = info or {
             "ignore_kana": ignore_kana,
@@ -50,18 +45,18 @@ class RSDataset(Dataset):
     def __len__(self):
         return len(self.items)
 
-    def __getitem__(self, idx):
-        return self.items[idx]
+    def __getitem__(self, idx) -> tuple[str, list[Radical], str]:
+        image_path, rootradical, writerindices = self.items[idx]
+        radicals = rootradical.get_radicals(self.radical_depth)
+        return (image_path, radicals, writerindices)
 
-    def add_item(self, image_path: str, charname: str, writername: str) -> None:
-        if self.ignore_kana and (charname in character_utility.all_kanas):
+    def add_item(self, image_path: str, rootradicalname: str, writername: str) -> None:
+        if self.ignore_kana and (rootradicalname in character_utility.all_kanas):
             return
 
-        char = Char.from_radicaljson(self.charname2radicaljson[charname])
+        rootradical = Radical.from_radicaljson(self.charname2radicaljson[rootradicalname])
 
-        self.items.append((image_path, char, writername))
-        self.all_charnames.add(charname)
-        self.all_writernames.add(writername)
+        self.items.append((image_path, rootradical, writername))
 
     def add_etlcdb(self, etlcdb_path: str, etlcdb_process_type: str, etlcdb_name: str) -> None:
         self.info["datasets"].append({
@@ -101,17 +96,29 @@ class RSDataset(Dataset):
     def create_radicalname2idx(self) -> dict[str, int]:
         radicalname2idx: dict[str, int] = {}
 
-        for _, char, _ in self.items:
-            for radical in char.radicals:
-                if radical.name is None:
-                    continue
+        if self.radical_depth == "binary-random":
+            queue: list[Radical] = []
+            for _, radical, _ in self.items:
+                for r in radical.get_radicals(self.radical_depth):
+                    queue.append(r)
+            
+            while len(queue):
+                r = queue.pop()
+                radicalname2idx.setdefault(r.name, len(radicalname2idx))
+                queue += r.children
 
-                radicalname2idx.setdefault(radical.name, len(radicalname2idx))
+        else:
+            for _, radical, _ in self.items:
+                for r in radical.get_radicals(self.radical_depth):
+                    radicalname2idx.setdefault(r.name, len(radicalname2idx))
 
         return radicalname2idx
 
     def create_writername2idx(self) -> dict[str, int]:
-        return {w: i for i, w in enumerate(self.all_writernames)}
+        writername2idx: dict[str, int] = {}
+        for _, _, writername in self.items:
+            writername2idx.setdefault(writername, len(writername2idx))
+        return writername2idx
 
     def random_split(self, sizes: Sequence[float]):
         lengths = [int(len(self.items) * l) for l in sizes]
@@ -137,8 +144,6 @@ class RSDataset(Dataset):
                 ignore_kana=self.ignore_kana,
 
                 items=items[a:(a + l)],
-                all_charnames=self.all_charnames,
-                all_writernames=self.all_writernames,
 
                 info=self.info,
             ))
@@ -155,30 +160,31 @@ def create_dataloader(
     shuffle_radicals_of_char,
     radicalname2idx,
     writername2idx,
-):
+)-> DataLoader[tuple[torch.Tensor, list[Radical], Optional[list[int]]]]:
     assert isinstance(dataset, RSDataset)
 
-    def collate_fn(batch: list[RSDatasetItemType]) -> tuple[torch.Tensor, list[Char], Optional[list[int]]]:
+    def collate_fn(batch: list[tuple[str, list[Radical], str]]) -> tuple[torch.Tensor, list[Radical], Optional[list[int]]]:
         nonlocal shuffle_radicals_of_char, radicalname2idx, writername2idx
 
         images: Any = [None for _ in range(len(batch))]
-        chars: Any = [None for _ in range(len(batch))]
+        radicallists: Any = [None for _ in range(len(batch))]
         writerindices = writername2idx and [None for _ in range(len(batch))]
 
-        for i, (image_path, char, writername) in enumerate(batch):
+        for i, (image_path, radicals, writername) in enumerate(batch):
             images[i] = read_image_as_tensor(image_path)
 
-            chars[i] = copy.deepcopy(char)
-            chars[i].register_radicalidx(radicalname2idx)
+            radicallists[i] = copy.deepcopy(radicals)
+            for r in radicallists[i]:
+                r.set_idx(radicalname2idx)
             if shuffle_radicals_of_char:
-                random.shuffle(chars[i].radicals)
+                random.shuffle(radicallists[i])
 
             if writerindices is not None:
                 writerindices[i] = writername2idx[writername]
 
         images = torch.stack(images, 0)
 
-        return images, chars, writerindices
+        return images, radicallists, writerindices
 
     dataloader = DataLoader(
         dataset,

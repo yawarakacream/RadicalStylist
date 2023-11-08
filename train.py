@@ -1,17 +1,54 @@
 import argparse
-import json
 from typing import Union
 
 import torch
 
-from character import Char, Radical
 from dataset import RSDataset, create_dataloader
 from image_vae import StableDiffusionVae
+from radical import Radical
 from radical_stylist import RadicalStylist
 from utility import pathstr, create_charname2radicaljson
 
 
+def prepare_radicallists_with_name(
+    charname2radicaljson,
+    radicalname2idx,
+    chars: list[Union[str, tuple[str, list[Radical]]]]
+):
+    radicallists_with_name: list[tuple[str, list[Radical]]] = []
+    for char in chars:
+        if isinstance(char, str):
+            name = char
+            radicallist: list[Radical] = []
+
+            queue = [Radical.from_radicaljson(charname2radicaljson[char])]
+            while len(queue):
+                r = queue.pop()
+                if r.name in radicalname2idx:
+                    radicallist.insert(0, r)
+                    continue
+                if len(r.children) == 0:
+                    raise Exception(f"unsupported character: {name}")
+                queue += r.children
+            
+        elif isinstance(char, tuple):
+            name, radicallist = char
+
+        else:
+            raise Exception()
+        
+        for r in radicallist:
+            r.set_idx(radicalname2idx)
+        
+        print(f"\t{name} = {' + '.join(map(lambda r: r.name, radicallist))}")
+
+        radicallists_with_name.append((name, radicallist))
+    
+    return radicallists_with_name
+
 def main(
+    *,
+
     save_path: str,
     stable_diffusion_path: str,
     radicals_data_path: str,
@@ -34,11 +71,12 @@ def main(
     shuffle_dataset: bool,
     dataloader_num_workers: int,
     shuffle_radicals_of_char: bool,
+    radical_depth: str,
     
     corpuses: list[str],
     etlcdb_path: str,
     
-    test_chars: list[Union[str, Char]],
+    test_chars: list[Union[str, tuple[str, list[Radical]]]],
     test_writers: Union[list[str], int],
     
     device: torch.device,
@@ -48,9 +86,9 @@ def main(
     charname2radicaljson = create_charname2radicaljson(radicals_data_path)
     
     # dataset
-    dataset = RSDataset(charname2radicaljson, ignore_kana=True)
+    dataset = RSDataset(charname2radicaljson, radical_depth=radical_depth, ignore_kana=True)
     dataset.add_from_corpuses_string(corpuses, etlcdb_path)
-    
+
     radicalname2idx = dataset.create_radicalname2idx()
     writername2idx = dataset.create_writername2idx() if learn_writer else None
     
@@ -65,9 +103,8 @@ def main(
     )
     
     print(f"train data:")
-    print(f"\tchars: {len(dataset.all_charnames)}")
     print(f"\tradicals: {len(radicalname2idx)}")
-    print(f"\twriters: {len(dataset.all_writernames)}")
+    print(f"\twriters: {writername2idx and len(writername2idx)}")
     print(f"\ttotal data size: {len(dataset)}")
     
     # test writer
@@ -79,22 +116,7 @@ def main(
 
     # test chars
     print("test characters:")
-    tmp = []
-    for test_char in test_chars:
-        if isinstance(test_char, str):
-            tmp.append(Char.from_radicaljson(charname2radicaljson[test_char]))
-        elif isinstance(test_char, Char):
-            tmp.append(test_char)
-        else:
-            raise Exception()
-        
-        tmp[-1].register_radicalidx(radicalname2idx)
-        
-        print("\t" + tmp[-1].to_formula_string())
-    
-    test_chars = tmp
-    del tmp
-
+    test_radicallists_with_name = prepare_radicallists_with_name(charname2radicaljson, radicalname2idx, test_chars)
     vae = StableDiffusionVae(stable_diffusion_path, device)
     
     print("initializing RadicalStylist...")
@@ -124,17 +146,17 @@ def main(
     print("initialized.")
         
     print("training started!")
-    radical_stylist.train(dataloader, epochs, test_chars, test_writers)
+    radical_stylist.train(dataloader, epochs, test_radicallists_with_name, test_writers)
     print("training finished!")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", type=str, default="cuda:0")
+    parser.add_argument("--device", type=str, default="cuda:2")
     args = parser.parse_args()
     
     main(
-        save_path=pathstr("./output/rs test encode_type=2"),
+        save_path=pathstr("./output/test character_encode/encode_type=3 depth=binary-random ETL8G"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
         radicals_data_path=pathstr("~/datadisk/dataset/kanjivg/build/all.json"),
 
@@ -152,12 +174,13 @@ if __name__ == "__main__":
         diffusion_beta_end=0.02,
 
         batch_size=244,
-        epochs=1000,
+        epochs=10000,
         shuffle_dataset=True,
         dataloader_num_workers=4,
         shuffle_radicals_of_char=True,
+        radical_depth="binary-random",
 
-        corpuses=["etlcdb/no_background 64x64/ETL8G_400"],
+        corpuses=["etlcdb/no_background 64x64/ETL8G"],
         etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
 
         test_chars=[
@@ -165,10 +188,10 @@ if __name__ == "__main__":
             *"何標園遠",
 
             # 部首単体
-            Char("亻", [Radical("亻", left=0.078125, right=0.3125, top=0.140625, bottom=0.875)]),
-            Char("宀", [Radical("宀", left=0.140625, right=0.859375, top=0.078125, bottom=0.375)]),
-            Char("广", [Radical("广", left=0.078125, right=0.78125, top=0.078125, bottom=0.84375)]),
-            Char("⻌", [Radical("⻌", left=0.109375, right=0.8125, top=0.15625, bottom=0.828125)]),
+            ("亻", [Radical("亻", left=0.078125, right=0.3125, top=0.140625, bottom=0.875)]),
+            ("宀", [Radical("宀", left=0.140625, right=0.859375, top=0.078125, bottom=0.375)]),
+            ("广", [Radical("广", left=0.078125, right=0.78125, top=0.078125, bottom=0.84375)]),
+            ("⻌", [Radical("⻌", left=0.109375, right=0.8125, top=0.15625, bottom=0.828125)]),
 
             # 訓練データにないが部首データにある字
             *"倹困麻諭",

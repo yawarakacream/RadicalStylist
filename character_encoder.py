@@ -3,18 +3,19 @@ import math
 import torch
 from torch import nn
 
-from character import Char
+from radical import Radical
 
 
-encoder_type = 2
-print(f"character encoder_type={encoder_type}")
+encode_type = 3
+print(f"character encode_type={encode_type}")
 
 
-if encoder_type == 0:
+if encode_type == 0:
+    
     # https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/unet.py#L688
-    class CharacterAttention(nn.Module):
+    class CharacterAttention(nn.Module): # type: ignore
         def __init__(self, input_size, hidden_size):
-            super(CharacterAttention, self).__init__()
+            super(CharacterAttention, self).__init__() # type: ignore
             self.query = nn.Linear(input_size, hidden_size)
             self.key = nn.Linear(input_size, hidden_size)
             self.value = nn.Linear(input_size, hidden_size)
@@ -39,9 +40,11 @@ if encoder_type == 0:
 
 
     # https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/unet.py#L711
-    class CharacterEncoder(nn.Module):
+    class CharacterEncoder(nn.Module): # type: ignore
         def __init__(self, input_size, hidden_size, char_length):
-            super(CharacterEncoder, self).__init__()
+            import numpy as np
+
+            super(CharacterEncoder, self).__init__() # type: ignore
             
             self.embedding_dim = hidden_size
             self.char_length = char_length
@@ -77,7 +80,7 @@ if encoder_type == 0:
                             self.pos_enc_list[-1][-1][i + 1] = math.cos(theta)
 
                         assert (
-                            abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4)
+                            abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4) # type: ignore
                             < 1e-4
                         )
             
@@ -111,7 +114,7 @@ if encoder_type == 0:
                             self.pos_enc_list[-1][-1][i + 11] = math.cos(theta)
                         
                         assert (
-                            abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4)
+                            abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4) # type: ignore
                             < 1e-4
                         )
                     
@@ -156,7 +159,7 @@ if encoder_type == 0:
                             self.pos_enc_list[-1][-1][i + 3] = math.cos(theta)
                         
                         assert (
-                            abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4)
+                            abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4) # type: ignore
                             < 1e-4
                         )
                     
@@ -188,7 +191,7 @@ if encoder_type == 0:
                             self.pos_enc_list[-1][-1][i_0 + i + 1] = math.cos(theta)
                         
                         assert (
-                            abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4)
+                            abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4) # type: ignore
                             < 1e-4
                         )
                         
@@ -214,7 +217,7 @@ if encoder_type == 0:
                             self.pos_enc_list[-1][-1][i_0 + i + 1] = math.cos(theta)
                         
                         assert (
-                            abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4)
+                            abs(torch.norm(self.pos_enc_list[-1][-1], 2) - self.rad_emb_norm / 4) # type: ignore
                             < 1e-4
                         )
         
@@ -252,11 +255,12 @@ if encoder_type == 0:
             return rads_embs # (batch_size, char_length, hidden_size)
 
 
-elif encoder_type == 1:
+elif encode_type == 1:
+    
     # https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/unet.py#L688
-    class CharacterAttention(nn.Module):
+    class CharacterAttention(nn.Module): # type: ignore
         def __init__(self, input_size, hidden_size):
-            super(CharacterAttention, self).__init__()
+            super(CharacterAttention, self).__init__() # type: ignore
             self.query = nn.Linear(input_size, hidden_size)
             self.key = nn.Linear(input_size, hidden_size)
             self.value = nn.Linear(input_size, hidden_size)
@@ -281,7 +285,7 @@ elif encoder_type == 1:
 
 
     # https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/unet.py#L711
-    class CharacterEncoder(nn.Module):
+    class CharacterEncoder(nn.Module): # type: ignore
         def __init__(
             self,
             num_radicals: int,
@@ -317,10 +321,10 @@ elif encoder_type == 1:
         def device(self) -> torch.device:
             return self.rademb_layer.weight.device
         
-        def embed_radical(self, batch_char: list[Char]) -> torch.Tensor:
+        def embed_radical(self, batch_char: list[list[Radical]]) -> torch.Tensor:
             batch_radicalindices = []
             for char in batch_char:
-                radicalindices = [r.idx for r in char.radicals]
+                radicalindices = [r.idx for r in char]
                 radicalindices += [self.rademb_padding_idx] * (self.len_radicals_of_char - len(radicalindices))
                 batch_radicalindices.append(radicalindices)
             
@@ -329,11 +333,11 @@ elif encoder_type == 1:
             batch_embedding =self.rademb_layer(batch_radicalindices)
             return batch_embedding # (batch_size, self.len_radicals_of_char, self.embedding_dim)
 
-        def embed_position(self, batch_char: list[Char]) -> torch.Tensor:
+        def embed_position(self, batch_char: list[list[Radical]]) -> torch.Tensor:
             batch_embedding = []
             for char in batch_char:
                 embedding = []
-                for radical in char.radicals:
+                for radical in char:
                     embedding.append(
                         self.precomputed_posemb[int(radical.center_x * self.posemb_precision)]
                         + self.precomputed_posemb[int(radical.center_y * self.posemb_precision)]
@@ -346,7 +350,7 @@ elif encoder_type == 1:
             batch_embedding = torch.tensor(batch_embedding, device=self.device)
             return batch_embedding # (batch_size, self.len_radicals_of_char, self.embedding_dim)
 
-        def forward(self, batch_char: list[Char]):
+        def forward(self, batch_char: list[list[Radical]]):
             batch_rademb = self.embed_radical(batch_char)
             batch_posemb = self.embed_position(batch_char)
             batch_embedding = torch.cat((batch_rademb, batch_posemb), dim=2)
@@ -354,7 +358,8 @@ elif encoder_type == 1:
             return batch_embedding # (batch_size, char_length, hidden_size)
 
 
-elif encoder_type == 2:
+elif encode_type == 2:
+    
     # https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/unet.py#L688
     class CharacterAttention(nn.Module):
         def __init__(self, input_size, hidden_size):
@@ -383,6 +388,65 @@ elif encoder_type == 2:
 
 
     # https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/unet.py#L711
+    class CharacterEncoder(nn.Module): # type: ignore
+        def __init__(
+            self,
+            num_radicals: int,
+            embedding_dim: int,
+            len_radicals_of_char: int,
+        ):
+            super(CharacterEncoder, self).__init__() # type: ignore
+            
+            self.embedding_dim = embedding_dim
+            self.len_radicals_of_char = len_radicals_of_char
+
+            self.rademb_dim = embedding_dim - 4
+            self.posemb_dim = 4
+            
+            self.rademb_padding_idx = num_radicals
+            self.rademb_layer = nn.Embedding(num_radicals + 1, self.rademb_dim, max_norm=1, padding_idx=self.rademb_padding_idx)
+            
+            self.attention = CharacterAttention(embedding_dim, embedding_dim)
+
+        @property
+        def device(self) -> torch.device:
+            return self.rademb_layer.weight.device
+        
+        def embed_radical(self, batch_char: list[list[Radical]]) -> torch.Tensor:
+            batch_radicalindices = []
+            for char in batch_char:
+                radicalindices = [r.idx for r in char]
+                radicalindices += [self.rademb_padding_idx] * (self.len_radicals_of_char - len(radicalindices))
+                batch_radicalindices.append(radicalindices)
+            
+            batch_radicalindices = torch.tensor(batch_radicalindices, dtype=torch.long, device=self.device)
+
+            batch_embedding = self.rademb_layer(batch_radicalindices)
+            return batch_embedding # (batch_size, self.len_radicals_of_char, self.embedding_dim)
+
+        def embed_position(self, batch_char: list[list[Radical]]) -> torch.Tensor:
+            batch_embedding = []
+            for char in batch_char:
+                embedding = []
+                for radical in char:
+                    embedding.append([radical.center_x, radical.center_y, radical.width, radical.height])
+                embedding += [[0, 0, 0, 0]] * (self.len_radicals_of_char - len(embedding))
+                batch_embedding.append(embedding)
+            
+            batch_embedding = torch.tensor(batch_embedding, device=self.device)
+            return batch_embedding # (batch_size, self.len_radicals_of_char, self.embedding_dim)
+
+        def forward(self, batch_char: list[list[Radical]]):
+            batch_rademb = self.embed_radical(batch_char)
+            batch_posemb = self.embed_position(batch_char)
+            batch_embedding = torch.cat((batch_rademb, batch_posemb), dim=2)
+            batch_embedding = self.attention(batch_embedding)
+            return batch_embedding # (batch_size, char_length, hidden_size)
+
+
+elif encode_type == 3:
+
+    # https://github.com/koninik/WordStylist/blob/f18522306e533a01eb823dc4369a4bcb7ea67bcc/unet.py#L711
     class CharacterEncoder(nn.Module):
         def __init__(
             self,
@@ -400,30 +464,28 @@ elif encoder_type == 2:
             
             self.rademb_padding_idx = num_radicals
             self.rademb_layer = nn.Embedding(num_radicals + 1, self.rademb_dim, max_norm=1, padding_idx=self.rademb_padding_idx)
-            
-            self.attention = CharacterAttention(embedding_dim, embedding_dim)
 
         @property
         def device(self) -> torch.device:
             return self.rademb_layer.weight.device
         
-        def embed_radical(self, batch_char: list[Char]) -> torch.Tensor:
+        def embed_radical(self, batch_char: list[list[Radical]]) -> torch.Tensor:
             batch_radicalindices = []
             for char in batch_char:
-                radicalindices = [r.idx for r in char.radicals]
+                radicalindices = [r.idx for r in char]
                 radicalindices += [self.rademb_padding_idx] * (self.len_radicals_of_char - len(radicalindices))
                 batch_radicalindices.append(radicalindices)
             
             batch_radicalindices = torch.tensor(batch_radicalindices, dtype=torch.long, device=self.device)
 
-            batch_embedding =self.rademb_layer(batch_radicalindices)
+            batch_embedding = self.rademb_layer(batch_radicalindices)
             return batch_embedding # (batch_size, self.len_radicals_of_char, self.embedding_dim)
 
-        def embed_position(self, batch_char: list[Char]) -> torch.Tensor:
+        def embed_position(self, batch_char: list[list[Radical]]) -> torch.Tensor:
             batch_embedding = []
             for char in batch_char:
                 embedding = []
-                for radical in char.radicals:
+                for radical in char:
                     embedding.append([radical.center_x, radical.center_y, radical.width, radical.height])
                 embedding += [[0, 0, 0, 0]] * (self.len_radicals_of_char - len(embedding))
                 batch_embedding.append(embedding)
@@ -431,11 +493,10 @@ elif encoder_type == 2:
             batch_embedding = torch.tensor(batch_embedding, device=self.device)
             return batch_embedding # (batch_size, self.len_radicals_of_char, self.embedding_dim)
 
-        def forward(self, batch_char: list[Char]):
+        def forward(self, batch_char: list[list[Radical]]):
             batch_rademb = self.embed_radical(batch_char)
             batch_posemb = self.embed_position(batch_char)
             batch_embedding = torch.cat((batch_rademb, batch_posemb), dim=2)
-            batch_embedding = self.attention(batch_embedding)
             return batch_embedding # (batch_size, char_length, hidden_size)
 
 

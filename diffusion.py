@@ -71,24 +71,23 @@ class Diffusion:
     def sample(
         self,
         unet,
-        chars,
+        radicallists,
         writerindices,
         writer_cfg_scale=3, # classifier-free guidance scale
     ):
         unet.eval()
         
-        n = len(chars)
-        
+        n = len(radicallists)
         assert (writerindices is None) or (writerindices.size(0) == n)
         
         x = torch.randn((n, self.num_image_channels, self.image_size, self.image_size), device=self.device)
 
         for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
             t = torch.ones(n, dtype=torch.long, device=self.device) * i
-            predicted_noise = unet(x, t, chars, writerindices)
+            predicted_noise = unet(x, t, radicallists, writerindices)
 
             if (writerindices is not None) and (writer_cfg_scale > 0):
-                uncond_predicted_noise = unet(x, t, chars, None)
+                uncond_predicted_noise = unet(x, t, radicallists, None)
                 predicted_noise = torch.lerp(uncond_predicted_noise, predicted_noise, writer_cfg_scale)
 
             alpha = self.alpha[t][:, None, None, None]

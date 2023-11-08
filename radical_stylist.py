@@ -2,7 +2,7 @@ import copy
 import json
 import os
 import sys
-from typing import Optional
+from typing import Optional, Union
 
 if not all(map(lambda p: p.endswith("stable_diffusion"), sys.path)):
     sys.path.append(os.path.join(os.path.dirname(__file__), "stable_diffusion"))
@@ -11,9 +11,11 @@ from tqdm import tqdm
 
 import torch
 from torch import optim, nn
+from torch.utils.data import DataLoader
 
 from diffusion import EMA, Diffusion
 from image_vae import StableDiffusionVae
+from radical import Radical
 from unet import UNetModel
 from utility import pathstr, save_images
 
@@ -194,18 +196,26 @@ class RadicalStylist:
 
         os.makedirs(pathstr(self.save_path, "generated"), exist_ok=True)
 
-    def train(self, dataloader, epochs, test_chars, test_writers):
+    def train(
+        self,
+        dataloader: DataLoader[tuple[torch.Tensor, list[Radical], Optional[list[int]]]],
+        epochs: int,
+        test_radicallists_with_name: list[tuple[str, list[Radical]]],
+        test_writers: Union[list[str], int],
+    ) -> None:
         if os.path.exists(pathstr(self.save_path, "train_info.json")):
             raise Exception("already trained")
         
+        test_radicallists = [r for _, r in test_radicallists_with_name]
+
         num_epochs_digit = len(str(epochs))
-        num_test_chars_digit = len(str(len(test_chars)))
+        num_test_radicallists_digit = len(str(len(test_radicallists_with_name)))
         
         if epochs < 1000:
             checkpoint_epochs = set([0, epochs - 1])
         else:
             # ex) epochs = 1000 => checkpoint_epochs = {0, 99, 199, ..., 899, 999}
-            tmp = 10 ** (num_epochs_digit - 2)
+            tmp = 10 ** min(2, num_epochs_digit - 2)
             checkpoint_epochs = set(i - 1 for i in range(tmp, epochs, tmp))
             checkpoint_epochs.add(0)
             checkpoint_epochs.add(epochs - 1)
@@ -221,7 +231,7 @@ class RadicalStylist:
             loss_list.append(0)
             
             pbar = tqdm(dataloader, desc=f"{epoch=}")
-            for images, chars, writerindices in pbar:
+            for images, radicallists, writerindices in pbar:
                 # prepare batch
                 images = self.vae.encode(images)
                 
@@ -234,7 +244,7 @@ class RadicalStylist:
                 ts = self.diffusion.sample_timesteps(images.shape[0])
                 x_t, noise = self.diffusion.noise_images(images, ts)
                 
-                predicted_noise = self.unet(x_t, ts, chars, writerindices)
+                predicted_noise = self.unet(x_t, ts, radicallists, writerindices)
                 
                 loss = mse_loss(noise, predicted_noise)
                 
@@ -251,24 +261,27 @@ class RadicalStylist:
             
             # checkpoint
             if epoch in checkpoint_epochs:
-                images_list = self.sample(test_chars, test_writers)
+                images_list = self.sample(test_radicallists, test_writers)
                 for i, images in enumerate(images_list):
                     path = os.path.join(
                         self.save_path,
                         "generated",
-                        f"test_{str(i).zfill(num_test_chars_digit)}_{str(epoch + 1).zfill(num_epochs_digit)}.png")
+                        f"test_{str(i).zfill(num_test_radicallists_digit)}_{str(epoch + 1).zfill(num_epochs_digit)}.png")
                     save_images(images, path)
 
                 with open(os.path.join(self.save_path, "train_info.json"), "w") as f:
                     train_info = {
                         "dataloader": {
                             "batch_size": dataloader.batch_size,
-                            "dataset": dataloader.dataset.info,
+                            "dataset": dataloader.dataset.info, # type: ignore
                         },
                         "epochs": epochs,
                         "loss": loss_list,
                         "test": {
-                            "chars": [c.to_dict() for c in test_chars],
+                            "radicallists": [
+                                {"name": name, "elements": [r.to_dict() for r in radicallist]}
+                                for name, radicallist in test_radicallists_with_name
+                            ],
                             "writers": test_writers,
                         },
                     }
@@ -277,19 +290,19 @@ class RadicalStylist:
                 self.save()
 
     @torch.no_grad()
-    def sample(self, chars, writers):
+    def sample(self, radicallists, writers):
         if isinstance(writers, int):
             assert self.writername2idx is None
             assert 0 < writers
             
             n_per_chars = writers
             
-            tmp_chars = []
-            for c in chars:
+            tmp_radicallists = []
+            for radicallist in radicallists:
                 for _ in range(n_per_chars):
-                    tmp_chars.append(c)
-            
-            chars = copy.deepcopy(tmp_chars)
+                    tmp_radicallists.append(radicallist)
+
+            radicallists = copy.deepcopy(tmp_radicallists)
             writerindices = None
         
         elif isinstance(writers, list):
@@ -298,20 +311,20 @@ class RadicalStylist:
             
             n_per_chars = len(writers)
             
-            tmp_chars = []
+            tmp_radicallists = []
             tmp_writerindices = []
-            for c in chars:
-                for w in writers:
-                    tmp_chars.append(c)
-                    tmp_writerindices.append(self.writername2idx[w])
+            for radicallist in radicallists:
+                for writer in writers:
+                    tmp_radicallists.append(radicallist)
+                    tmp_writerindices.append(self.writername2idx[writer])
                     
-            chars = copy.deepcopy(tmp_chars)
+            radicallists = copy.deepcopy(tmp_radicallists)
             writerindices = torch.tensor(tmp_writerindices, dtype=torch.long, device=self.device)
             
         else:
             raise Exception()
             
-        sampled_latents = self.diffusion.sample(self.ema_model, chars, writerindices)
+        sampled_latents = self.diffusion.sample(self.ema_model, radicallists, writerindices)
         sampled_images = self.vae.decode(sampled_latents)
         
         # char 毎にして返す

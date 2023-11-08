@@ -4,27 +4,11 @@ from typing import Union
 
 import torch
 
-from character import Char, Radical
+from radical import Radical
 from image_vae import StableDiffusionVae
 from radical_stylist import RadicalStylist
+from train import prepare_radicallists_with_name
 from utility import pathstr, save_images, char2code, create_charname2radicaljson
-
-
-def prepare_chars(chars: list[Union[str, Char]], charname2radicaljson: dict[str, Char], radicalname2idx: dict[str, int]) -> list[Char]:
-    ret = []
-    for char in chars:
-        if isinstance(char, str):
-            ret.append(Char.from_radicaljson(charname2radicaljson[char]))
-        elif isinstance(char, Char):
-            ret.append(char)
-        else:
-            raise Exception()
-        
-        ret[-1].register_radicalidx(radicalname2idx)
-        
-        print("\t" + ret[-1].to_formula_string())
-    
-    return ret
 
 
 def main(
@@ -32,7 +16,7 @@ def main(
     stable_diffusion_path: str,
     radicals_data_path: str,
     
-    chars: list[Union[str, Char]],
+    chars: list[Union[str, tuple[str, list[Radical]]]],
     writers: Union[int, list[str]],
     
     device: torch.device,
@@ -47,16 +31,17 @@ def main(
     rs = RadicalStylist.load(save_path=save_path, vae=vae, device=device)
     print("loaded.")
 
-    prepared_chars = prepare_chars(chars, charname2radicaljson, rs.radicalname2idx)
-    images_list = rs.sample(prepared_chars, writers)
+    radicallists_with_name = prepare_radicallists_with_name(charname2radicaljson, rs.radicalname2idx, chars)
+    radicallists = [radicallist for _, radicallist in radicallists_with_name]
+    images_list = rs.sample(radicallists, writers)
 
     save_directory = pathstr(rs.save_path, "generated")
 
-    for i, (char, images) in enumerate(zip(prepared_chars, images_list)):
+    for i, ((name, radicallist), images) in enumerate(zip(radicallists_with_name, images_list)):
         if isinstance(writers, int):
-            path = f"trained_{char2code(char.name or '?')}"
+            path = f"trained_{char2code(name or '?')}"
         elif isinstance(writers, list):
-            path = f"trained_{char2code(char.name or '?')}_{writers[i]}"
+            path = f"trained_{char2code(name or '?')}_{writers[i]}"
 
         path = pathstr(save_directory, path)
 
@@ -84,10 +69,10 @@ if __name__ == "__main__":
             *"何標園遠",
 
             # 部首単体
-            Char("亻", [Radical("亻", left=0.078125, right=0.3125, top=0.140625, bottom=0.875)]),
-            Char("宀", [Radical("宀", left=0.140625, right=0.859375, top=0.078125, bottom=0.375)]),
-            Char("广", [Radical("广", left=0.078125, right=0.78125, top=0.078125, bottom=0.84375)]),
-            Char("⻌", [Radical("⻌", left=0.109375, right=0.8125, top=0.15625, bottom=0.828125)]),
+            ("亻", [Radical("亻", left=0.078125, right=0.3125, top=0.140625, bottom=0.875)]),
+            ("宀", [Radical("宀", left=0.140625, right=0.859375, top=0.078125, bottom=0.375)]),
+            ("广", [Radical("广", left=0.078125, right=0.78125, top=0.078125, bottom=0.84375)]),
+            ("⻌", [Radical("⻌", left=0.109375, right=0.8125, top=0.15625, bottom=0.828125)]),
 
             # 訓練データにないが部首データにある字
             *"倹困麻諭",
