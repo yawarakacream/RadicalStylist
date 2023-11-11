@@ -490,7 +490,7 @@ elif encode_type == 3:
                 embedding += [[0, 0, 0, 0]] * (self.len_radicals_of_char - len(embedding))
                 batch_embedding.append(embedding)
             
-            batch_embedding = torch.tensor(batch_embedding, device=self.device)
+            batch_embedding = torch.tensor(batch_embedding, dtype=torch.float, device=self.device)
             return batch_embedding # (batch_size, self.len_radicals_of_char, self.embedding_dim)
 
         def forward(self, batch_char: list[list[Radical]]):
