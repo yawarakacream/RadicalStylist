@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import copy
-import random
 from dataclasses import dataclass
 from typing import Final, Optional
+
+import numpy as np
+
+from kanjivg import Kvg
 
 
 @dataclass
@@ -45,32 +48,39 @@ class Radical:
         self.children = kwargs.get("children", [])
 
     @staticmethod
-    def from_radicaljson(json):
-        name = json["name"]
+    def from_kvg(kvg: Kvg, kvg_path: str, image_size=64, line_width=1, image_path: Optional[str] = None):
+        from PIL import Image
+
+        name = kvg.name
         if name is None:
-            raise Exception(f"name is None: {json}")
+            raise Exception("cannot use nameless radical")
+        if kvg.part is not None:
+            name = f"{name}_{kvg.part}"
+        
+        if image_path is None:
+            image_path = kvg.get_image_path(kvg_path, image_size=image_size, line_width=line_width)
 
-        if json["part"] is not None:
-            name += f'_{json["part"]}'
-
-        bounding = json["bounding"]
-
-        left = bounding["left"]
-        right = bounding["right"]
-        top = bounding["top"]
-        bottom = bounding["bottom"]
+        image = np.array(Image.open(image_path).convert("1")).transpose()
+        nonzero_idx = image.nonzero()
+        nonzero_idx[0].sort()
+        nonzero_idx[1].sort()
+        
+        left = (nonzero_idx[0][0] - 1) / image_size
+        right = (nonzero_idx[0][-1]) / image_size
+        top = (nonzero_idx[1][0] - 1) / image_size
+        bottom = (nonzero_idx[1][-1]) / image_size
 
         children = []
-        for child_json in json["children"]:
-            queue = [child_json]
-            while len(queue):
-                el = queue.pop()
-                if el["name"] is None:
-                    queue += el["children"]
+        if len(kvg.svg) == 0: # 角がある部首は子部首に分解しない
+            stack = list(reversed(kvg.children))
+            while len(stack):
+                kvg0 = stack.pop()
+                if kvg0.name is None:
+                    stack += kvg0.children
                 else:
-                    children.append(Radical.from_radicaljson(el))
+                    children.append(Radical.from_kvg(kvg0, kvg_path, image_size, line_width))
 
-        return Radical(name, left=left, right=right, top=top, bottom=bottom, children=children)
+        return Radical(name=name, left=left, right=right, top=top, bottom=bottom, children=children)
 
     @staticmethod
     def from_dict(dct):
@@ -88,8 +98,8 @@ class Radical:
 
     def set_idx(self, radicalname2idx):
         self.idx_ = radicalname2idx[self.name]
-        for r in self.children:
-            r.set_idx(radicalname2idx)
+        # for r in self.children:
+        #     r.set_idx(radicalname2idx)
         
     @property
     def center_x(self) -> float:
@@ -121,25 +131,32 @@ class Radical:
                     ret.append(copy.deepcopy(r))
             return ret
             
-        elif depth == "binary-random":
-            if random.random() < 0.5:
-                return [copy.deepcopy(self)]
+        # elif depth == "binary-random":
+        #     if random.random() < 0.5:
+        #         return [copy.deepcopy(self)]
 
-            ret = []
-            for c in self.children:
-                for r in c.get_radicals("binary-random"):
-                    ret.append(copy.deepcopy(r))
-            return ret
+        #     ret = []
+        #     for c in self.children:
+        #         for r in c.get_radicals("binary-random"):
+        #             ret.append(copy.deepcopy(r))
+        #     return ret
 
-        elif depth == "legacy":
-            if len(self.children) < 1:
-                return [copy.deepcopy(self)]
+        # elif depth == "binary-random_1":
+        #     ret = []
+        #     for c in self.children:
+        #         for r in c.get_radicals("binary-random"):
+        #             ret.append(copy.deepcopy(r))
+        #     return ret
 
-            ret = []
-            for c in self.children:
-                for r in c.get_radicals("max"):
-                    ret.append(copy.deepcopy(r))
-            return ret
+        # elif depth == "legacy":
+        #     if len(self.children) < 1:
+        #         return [copy.deepcopy(self)]
+
+        #     ret = []
+        #     for c in self.children:
+        #         for r in c.get_radicals("max"):
+        #             ret.append(copy.deepcopy(r))
+        #     return ret
             
         else:
             raise Exception(f"unknown depth: {depth}")

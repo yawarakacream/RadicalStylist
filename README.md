@@ -5,22 +5,29 @@ submodule として stable-diffusion を利用
 
 ## 部首データの準備
 
-次の `Json` を用意して `--radical_data_path` に与える
+[KanjiVG](https://kanjivg.tagaini.net/index.html) を次のように整形して `--kvg_path` に与える
+
+各文字に対して次の `Json` を用意する
+
+`p`: 16 進数 5 桁文字コード，下 2 桁切り捨て
+`c`: 16 進数 5 桁文字コード
+
+`{p}/{c}/{c}.json`
 
 ```typescript
 type Item = {
-  // 部首名
-  element: string;
-  // その部首を構成する何番目のストロークか
+  // KanjiVG の `id`
+  kvgid: string;
+  // 部首名 (KanjiVG の `kvg:element`)
+  name: string;
+  // その部首を構成する何番目のストロークか (KanjiVG の `kvg:part`)
   part: number | null;
-  // 大きさ 0 ~ 1
-  boundings: {
-    left: number;
-    right: number
-    top: number;
-    bottom: number;
-  }
-  children: Item[]; // 部首をさらに分解したもの
+  // 部首としての場所 (KanjiVG の `kvg:position`)
+  position: string | null;
+  // SVG の path の d
+  svg: string[];
+  // 部首をさらに分解したもの
+  children: Item[];
 };
 
 type Json = Item[];

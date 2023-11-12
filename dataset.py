@@ -1,18 +1,19 @@
 import copy
 import json
 import random
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, Union
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 
 import character_utility
+from kanjivg import Kvg, KvgContainer
 from radical import Radical
 from utility import pathstr, read_image_as_tensor
 
 
 class RSDataset(Dataset):
-    charname2radicaljson: dict[str, list[Radical]]
+    kvgcontainer: KvgContainer
     ignore_kana: bool
     radical_depth: str
 
@@ -23,7 +24,7 @@ class RSDataset(Dataset):
     def __init__(
         self,
 
-        charname2radicaljson,
+        kvgcontainer: KvgContainer,
         radical_depth="max",
         ignore_kana=False,
 
@@ -31,7 +32,7 @@ class RSDataset(Dataset):
 
         info=None,
     ):
-        self.charname2radicaljson = charname2radicaljson
+        self.kvgcontainer = kvgcontainer
         self.ignore_kana = ignore_kana
         self.radical_depth = radical_depth
 
@@ -50,13 +51,31 @@ class RSDataset(Dataset):
         radicals = rootradical.get_radicals(self.radical_depth)
         return (image_path, radicals, writerindices)
 
-    def add_item(self, image_path: str, rootradicalname: str, writername: str) -> None:
-        if self.ignore_kana and (rootradicalname in character_utility.all_kanas):
-            return
+    def add_item(self, image_path: str, char: Union[str, Kvg, Radical], writername: str) -> None:
+        if isinstance(char, str):
+            charname = char
 
-        rootradical = Radical.from_radicaljson(self.charname2radicaljson[rootradicalname])
+            if self.ignore_kana and (charname in character_utility.all_kanas):
+                return
 
-        self.items.append((image_path, rootradical, writername))
+            rootkvg = self.kvgcontainer.get_kvg(charname)
+            rootradical = Radical.from_kvg(rootkvg, self.kvgcontainer.kvg_path)
+
+            self.add_item(image_path, rootradical, writername)
+
+        elif isinstance(char, Radical):
+            radical = char
+
+            if radical.name is None:
+                raise Exception("cannot add nameless radical")
+
+            if self.ignore_kana and (radical.name in character_utility.all_kanas):
+                return
+
+            self.items.append((image_path, radical, writername))
+
+        else:
+            raise Exception()
 
     def add_etlcdb(self, etlcdb_path: str, etlcdb_process_type: str, etlcdb_name: str) -> None:
         self.info["datasets"].append({
@@ -66,7 +85,7 @@ class RSDataset(Dataset):
 
         with open(pathstr(etlcdb_path, f"{etlcdb_name}.json")) as f:
             json_data = json.load(f)
-
+        
         for item in json_data:
             relative_image_path = item["Path"] # ex) ETL4/5001/0x3042.png
             image_path = pathstr(etlcdb_path, etlcdb_process_type, relative_image_path)
@@ -78,34 +97,28 @@ class RSDataset(Dataset):
 
             self.add_item(image_path, charname, writername)
 
-    def add_from_corpuses_string(self, corpuses, etlcdb_path: str) -> None:
-        for corpus in corpuses:
-            corpus = corpus.split("/")
-            corpus_type = corpus[0]
-
-            if corpus_type == "etlcdb":
-                _, etlcdb_process_type, etlcdb_names = corpus
-                etlcdb_names = etlcdb_names.split(",")
-
-                for etlcdb_name in etlcdb_names:
-                    self.add_etlcdb(etlcdb_path, etlcdb_process_type, etlcdb_name)
-
-            else:
-                raise Exception(f"unknown corpus type: {corpus_type}")
-
     def create_radicalname2idx(self) -> dict[str, int]:
         radicalname2idx: dict[str, int] = {}
 
         if self.radical_depth == "binary-random":
-            queue: list[Radical] = []
+            stack: list[Radical] = []
             for _, radical, _ in self.items:
-                for r in radical.get_radicals(self.radical_depth):
-                    queue.append(r)
+                stack.append(radical)
             
-            while len(queue):
-                r = queue.pop()
+            while len(stack):
+                r = stack.pop()
                 radicalname2idx.setdefault(r.name, len(radicalname2idx))
-                queue += r.children
+                stack += r.children
+
+        elif self.radical_depth == "binary-random_1":
+            stack: list[Radical] = []
+            for _, radical, _ in self.items:
+                stack += radical.children
+            
+            while len(stack):
+                r = stack.pop()
+                radicalname2idx.setdefault(r.name, len(radicalname2idx))
+                stack += r.children
 
         else:
             for _, radical, _ in self.items:
@@ -140,7 +153,7 @@ class RSDataset(Dataset):
         a = 0
         for l in lengths:
             sub_list.append(RSDataset(
-                charname2radicaljson=self.charname2radicaljson,
+                kvgcontainer=self.kvgcontainer,
                 ignore_kana=self.ignore_kana,
 
                 items=items[a:(a + l)],
