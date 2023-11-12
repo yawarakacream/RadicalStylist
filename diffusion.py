@@ -73,7 +73,7 @@ class Diffusion:
         unet,
         radicallists,
         writerindices,
-        writer_cfg_scale=3, # classifier-free guidance scale
+        writer_cfg_scale=0, # classifier-free guidance scale
     ):
         unet.eval()
         
