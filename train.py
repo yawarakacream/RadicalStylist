@@ -4,8 +4,7 @@ from typing import Union
 
 import torch
 
-import character_utility as charutil
-from dataset import RSDataset, create_dataloader
+from dataset import RSDataset
 from image_vae import StableDiffusionVae
 from kanjivg import KvgContainer
 from radical import Radical
@@ -88,6 +87,7 @@ def prepare_radicallists_with_name(
 
     return radicallists_with_name
 
+
 def main(
     *,
 
@@ -97,8 +97,8 @@ def main(
     
     image_size: int,
     dim_char_embedding: int,
-    char_length: int,
-    learn_writer: bool,
+    len_radicals_of_char: int,
+    writer_mode: str,
     num_res_blocks: int,
     num_heads: int,
     
@@ -112,33 +112,39 @@ def main(
     epochs: int,
     shuffle_dataset: bool,
     dataloader_num_workers: int,
-    shuffle_radicals_of_char: bool,
+    shuffle_radicallist_of_char: bool,
     radical_depth: str,
     
     corpuses: list[tuple],
     etlcdb_path: str,
-    train_kvg: str,
-    train_kvg_line_width: int,
     
     test_chars: list[Union[str, tuple[str, list[Radical]]]],
     test_writers: Union[list[str], int],
     
     device: torch.device,
 ):
-    print(f"device: {device}")
     print(f"save_path: {save_path}")
-    
+    print(f"device: {device}")
+
     kvgcontainer = KvgContainer(kvg_path)
-    
+
     # train data
     print(f"train data:")
 
-    dataset = RSDataset(kvgcontainer, radical_depth=radical_depth, ignore_kana=True)
+    dataset = RSDataset(kvgcontainer, radical_depth=radical_depth, ignore_kana=True, writer_mode=writer_mode)
 
     for corpus in corpuses:
         corpus_type = corpus[0]
 
-        if corpus_type == "etlcdb":
+        if corpus_type == "kvg":
+            _, mode, line_width = corpus
+
+            if mode == "none":
+                continue
+
+            dataset.add_kvg(mode, image_size, line_width)
+
+        elif corpus_type == "etlcdb":
             _, etlcdb_process_type, etlcdb_names = corpus
             etlcdb_names = etlcdb_names.split(",")
 
@@ -148,72 +154,35 @@ def main(
         else:
             raise Exception(f"unknown corpus type: {corpus_type}")
 
-    if train_kvg == "none":
-        pass
-    
-    elif train_kvg == "char":
-        writername = f"KVG_{image_size}x_lw={train_kvg_line_width}"
+    print(f"\tradicals: {len(dataset.radicalname2idx)}")
+    print(f"\twriters: {dataset.writername2idx and len(dataset.writername2idx)}")
+    print(f"\ttotal data size: {len(dataset)}")
 
-        for charname in charutil.kanjis.all():
-            kvg = kvgcontainer.get_kvg(charname)
-            image_path = kvg.get_image_path(kvg_path, image_size, train_kvg_line_width)
-            dataset.add_item(image_path, charname, writername)
-
-    elif train_kvg == "radicals":
-        writername = f"KVG_{image_size}x_lw={train_kvg_line_width}"
-
-        for charname in charutil.kanjis.all():
-            if charname in charutil.all_kanas:
-                continue
-
-            kvg = kvgcontainer.get_kvg(charname)
-
-            stack = [kvg]
-            while len(stack):
-                kvg = stack.pop()
-                stack += kvg.children
-
-                if kvg.name is None:
-                    continue
-
-                radicalname = kvg.name # 雑
-                if kvg.part is not None:
-                    radicalname = f"{radicalname}_{kvg.part}"
-
-                image_path = kvg.get_image_path(kvg_path, image_size, train_kvg_line_width)
-                radical = Radical.from_kvg(kvg, kvg_path, image_path=image_path)
-                dataset.add_item(image_path, radical, writername)
-
-    else:
-        raise Exception(f"unknown train_kvg: {train_kvg}")
-
-    radicalname2idx = dataset.create_radicalname2idx()
-    writername2idx = dataset.create_writername2idx() if learn_writer else None
-    
-    dataloader = create_dataloader(
-        dataset,
+    dataloader = dataset.create_dataloader(
         batch_size=batch_size,
         shuffle_dataset=shuffle_dataset,
         num_workers=dataloader_num_workers,
-        shuffle_radicals_of_char=shuffle_radicals_of_char,
-        radicalname2idx=radicalname2idx,
-        writername2idx=writername2idx,
+        shuffle_radicallist_of_char=shuffle_radicallist_of_char,
     )
-    
-    print(f"\tradicals: {len(radicalname2idx)}")
-    print(f"\twriters: {writername2idx and len(writername2idx)}")
-    print(f"\ttotal data size: {len(dataset)}")
-    
+
     # test writer
-    if learn_writer:
-        assert isinstance(test_writers, list)
-        print("test writers:", ", ".join(test_writers))
-    else:
+    if writer_mode == "none":
+        assert dataset.writername2idx is None
         assert isinstance(test_writers, int) and 0 < test_writers
+        
+    else:
+        assert dataset.writername2idx is not None
+        assert isinstance(test_writers, list)
+
+        for w in test_writers:
+            if w not in dataset.writername2idx:
+                raise Exception("unknown test writer: {w}")
+            
+        print("test writers:", ", ".join(test_writers))
 
     # test chars
     print("test characters:")
-    test_radicallists_with_name = prepare_radicallists_with_name(kvgcontainer, radicalname2idx, test_chars)
+    test_radicallists_with_name = prepare_radicallists_with_name(kvgcontainer, dataset.radicalname2idx, test_chars)
     for name, radicallist in test_radicallists_with_name:
         print(f"\t{name} = {' + '.join(map(lambda r: r.name, radicallist))}")
 
@@ -221,26 +190,26 @@ def main(
 
     print("initializing RadicalStylist...")
     radical_stylist = RadicalStylist(
-        save_path,
-        
-        radicalname2idx,
-        writername2idx,
-        
-        vae,
+        save_path=save_path,
 
-        image_size,
-        dim_char_embedding,
-        char_length,
-        num_res_blocks,
-        num_heads,
-        
-        learning_rate,
-        ema_beta,
-        diffusion_noise_steps,
-        diffusion_beta_start,
-        diffusion_beta_end,
-        
-        device,
+        radicalname2idx=dataset.radicalname2idx,
+        writername2idx=dataset.writername2idx,
+
+        vae=vae,
+
+        image_size=image_size,
+        dim_char_embedding=dim_char_embedding,
+        len_radicals_of_char=len_radicals_of_char,
+        num_res_blocks=num_res_blocks,
+        num_heads=num_heads,
+
+        learning_rate=learning_rate,
+        ema_beta=ema_beta,
+        diffusion_noise_steps=diffusion_noise_steps,
+        diffusion_beta_start=diffusion_beta_start,
+        diffusion_beta_end=diffusion_beta_end,
+
+        device=device,
     )
     radical_stylist.save(exist_ok=False)
     print("initialized.")
@@ -254,18 +223,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", type=str, default="cuda:2")
     args = parser.parse_args()
-    
+
     main(
-        # save_path=pathstr("./output/test kvg(lw=3) ignore_writer/ETL8G_400 (encode_type=3, radical_depth=max)"),
-        # save_path=pathstr("./output/test kvg(lw=3) ignore_writer/ETL8G_400+KVG (encode_type=3, radical_depth=max)"),
-        save_path=pathstr("./output/test kvg(lw=3) ignore_writer/ETL8G_400+KVG_radicals (encode_type=3, radical_depth=max)"),
+        save_path=pathstr("./output/test kvg(lw=3) writer_mode=dataset/ETL8G_400+KVG_radical (encode_type=3, radical_depth=max)"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
         kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
 
         image_size=64,
         dim_char_embedding=768,
-        char_length=12,
-        learn_writer=False,
+        len_radicals_of_char=12,
+        writer_mode="dataset",
         num_res_blocks=1,
         num_heads=4,
 
@@ -279,15 +246,14 @@ if __name__ == "__main__":
         epochs=10000,
         shuffle_dataset=True,
         dataloader_num_workers=4,
-        shuffle_radicals_of_char=True,
+        shuffle_radicallist_of_char=True,
         radical_depth="max",
 
-        corpuses=[("etlcdb", "no_background 64x64", "ETL8G_400")],
+        corpuses=[
+            ("etlcdb", "black_and_white 64x64", "ETL8G_400"),
+            ("kvg", "radical", 3)
+        ],
         etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
-        # train_kvg="none",
-        # train_kvg="char",
-        train_kvg="radicals",
-        train_kvg_line_width=3,
 
         test_chars=[
             # ETL8G にある字
@@ -303,7 +269,7 @@ if __name__ == "__main__":
             *"倹困麻諭",
         ],
         # test_writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
-        test_writers=8,
+        test_writers=[f"ETL8G_400" for _ in range(7)] + ["KVG_64x_lw=3"],
 
         device=torch.device(args.device),
     )

@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 
 import torch
 
@@ -11,6 +12,12 @@ from PIL import Image
 
 def pathstr(*s: str) -> str:
     return os.path.abspath(os.path.expanduser(os.path.join(*s)))
+
+
+def add_sys_path(path: str) -> None:
+    path = pathstr(path)
+    if not any(map(lambda p: p == path, sys.path)):
+        sys.path.append(path)
 
 
 def save_images(images, path):

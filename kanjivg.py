@@ -33,6 +33,7 @@ class Kvg:
             f"{image_size}x lw={line_width} {self.kvgid}.png",
         )
 
+
 class KvgContainer:
     kvg_path: str
 

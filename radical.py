@@ -130,33 +130,6 @@ class Radical:
                 for r in c.get_radicals("max"):
                     ret.append(copy.deepcopy(r))
             return ret
-            
-        # elif depth == "binary-random":
-        #     if random.random() < 0.5:
-        #         return [copy.deepcopy(self)]
 
-        #     ret = []
-        #     for c in self.children:
-        #         for r in c.get_radicals("binary-random"):
-        #             ret.append(copy.deepcopy(r))
-        #     return ret
-
-        # elif depth == "binary-random_1":
-        #     ret = []
-        #     for c in self.children:
-        #         for r in c.get_radicals("binary-random"):
-        #             ret.append(copy.deepcopy(r))
-        #     return ret
-
-        # elif depth == "legacy":
-        #     if len(self.children) < 1:
-        #         return [copy.deepcopy(self)]
-
-        #     ret = []
-        #     for c in self.children:
-        #         for r in c.get_radicals("max"):
-        #             ret.append(copy.deepcopy(r))
-        #     return ret
-            
         else:
             raise Exception(f"unknown depth: {depth}")

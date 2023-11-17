@@ -1,11 +1,11 @@
 import copy
 import json
 import os
-import sys
 from typing import Optional, Union
 
-if not all(map(lambda p: p.endswith("stable_diffusion"), sys.path)):
-    sys.path.append(os.path.join(os.path.dirname(__file__), "stable_diffusion"))
+from utility import pathstr, add_sys_path
+
+add_sys_path(pathstr(os.path.dirname(__file__), "stable_diffusion"))
 
 from tqdm import tqdm
 
@@ -17,12 +17,13 @@ from diffusion import EMA, Diffusion
 from image_vae import StableDiffusionVae
 from radical import Radical
 from unet import UNetModel
-from utility import pathstr, save_images
+from utility import save_images
 
 
 class RadicalStylist:
     def __init__(
         self,
+        *,
         
         save_path: str,
         
@@ -127,26 +128,26 @@ class RadicalStylist:
             diffusion_beta_end = model_info["diffusion_beta_end"]
         
         instance = RadicalStylist(
-            save_path,
+            save_path=save_path,
 
-            radicalname2idx,
-            writername2idx,
+            radicalname2idx=radicalname2idx,
+            writername2idx=writername2idx,
 
-            vae,
+            vae=vae,
 
-            image_size,
-            dim_char_embedding,
-            len_radicals_of_char,
-            num_res_blocks,
-            num_heads,
+            image_size=image_size,
+            dim_char_embedding=dim_char_embedding,
+            len_radicals_of_char=len_radicals_of_char,
+            num_res_blocks=num_res_blocks,
+            num_heads=num_heads,
 
-            learning_rate,
-            ema_beta,
-            diffusion_noise_steps,
-            diffusion_beta_start,
-            diffusion_beta_end,
+            learning_rate=learning_rate,
+            ema_beta=ema_beta,
+            diffusion_noise_steps=diffusion_noise_steps,
+            diffusion_beta_start=diffusion_beta_start,
+            diffusion_beta_end=diffusion_beta_end,
 
-            device,
+            device=device,
         )
         
         instance.unet.load_state_dict(torch.load(pathstr(save_path, "models", "unet.pt")))
