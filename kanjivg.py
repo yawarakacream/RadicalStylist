@@ -3,9 +3,19 @@ from __future__ import annotations
 import json
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Final, Optional
 
 from utility import pathstr
+
+
+@dataclass
+class KvgImageParameter:
+    image_size: int
+    padding: int
+    stroke_width: int
+
+    def to_string(self):
+        return f"{self.image_size}x,pad={self.padding},sw={self.stroke_width}"
 
 
 @dataclass
@@ -16,21 +26,30 @@ class Kvg:
     position: Optional[str]
     svg: list[str]
     children: list[Kvg]
+
+    container: Final[KvgContainer]
     
     @staticmethod
-    def from_dict(dct):
+    def from_dict(container: KvgContainer, dct):
         children = dct.pop("children")
-        children = [Kvg.from_dict(c) for c in children]
-        return Kvg(children=children, **dct)
+        children = [Kvg.from_dict(container, c) for c in children]
+        return Kvg(container=container, children=children, **dct)
     
-    def get_directory_path(self, kvg_path: str):
-        charcode = self.kvgid.split("-")[0]
-        return pathstr(kvg_path, "build", charcode[:-2] + "00", charcode)
+    @property
+    def charcode(self):
+        return self.kvgid.split("-")[0]
+    
+    @property
+    def directory_path(self):
+        return pathstr(self.container.kvg_path, "output", self.charcode[:-2] + "00", self.charcode)
 
-    def get_image_path(self, kvg_path: str, image_size: int, line_width: int):
+    def get_image_path(self, parameter: Optional[KvgImageParameter] = None, **kwargs):
+        if parameter is None:
+            parameter = KvgImageParameter(**kwargs)
+        
         return pathstr(
-            self.get_directory_path(kvg_path),
-            f"{image_size}x lw={line_width} {self.kvgid}.png",
+            self.directory_path,
+            f"{parameter.to_string()} {self.kvgid}.png",
         )
 
 
@@ -41,11 +60,10 @@ class KvgContainer:
         self.kvg_path = kvg_path
     
     def get_kvg(self, charname):
-        charcode = ord(charname)
-        parentcode_str = format((charcode >> 8) << 8, "#07x")[len("0x"):]
-        charcode_str = format(charcode, "#07x")[len("0x"):]
-        path = pathstr(self.kvg_path, "build", parentcode_str, charcode_str, f"{charcode_str}.json")
-        with open(path) as f:
+        charcode = format(ord(charname), "#07x")[len("0x"):]
+        directory_path = pathstr(self.kvg_path, "output", charcode[:-2] + "00", charcode)
+        json_path = pathstr(directory_path, f"{charcode}.json")
+        with open(json_path) as f:
             dct = json.load(f)
-        return Kvg.from_dict(dct)
+        return Kvg.from_dict(self, dct)
     

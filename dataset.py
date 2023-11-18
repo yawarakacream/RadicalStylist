@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 import character_utility as charutil
-from kanjivg import Kvg, KvgContainer
+from kanjivg import KvgContainer, KvgImageParameter
 from radical import Radical
 from utility import pathstr, read_image_as_tensor
 
@@ -55,19 +55,7 @@ class RSDataset(Dataset):
     def __getitem__(self, idx: int) -> tuple[str, list[Radical], Optional[str]]:
         return self.items[idx]
     
-    def add_item(self, image_path: str, char: Union[str, Radical, list[Radical]], writername: Optional[str]) -> None:
-        if isinstance(char, str):
-            charname = char
-
-            if self.ignore_kana and (charname in charutil.all_kanas):
-                return
-
-            kvg = self.kvgcontainer.get_kvg(charname)
-            radical = Radical.from_kvg(kvg, self.kvgcontainer.kvg_path)
-
-            self.add_item(image_path, radical, writername)
-            return
-
+    def add_item(self, image_path: str, char: Union[Radical, list[Radical]], writername: Optional[str]) -> None:
         if isinstance(char, Radical):
             radical = char
 
@@ -94,47 +82,45 @@ class RSDataset(Dataset):
 
         self.items.append((image_path, radicallist, writername))
 
-    def add_kvg(self, mode, image_size, line_width):
+    def add_kvg(self, mode, image_size, padding, stroke_width):
         self.info["datasets"].append({
             "dataset": "KVG",
             "mode": mode,
-            "line_width": line_width,
+            "padding": padding,
+            "stroke_width": stroke_width,
         })
         
         if self.writer_mode == "none":
             writername = None
         else:
-            writername = f"KVG_{image_size}x_lw={line_width}"
+            writername = f"KVG_{image_size}x,pad={padding},sw={stroke_width}"
 
-        if mode == "char":
-            for charname in charutil.kanjis.all():
-                kvg = self.kvgcontainer.get_kvg(charname)
-                image_path = kvg.get_image_path(self.kvgcontainer.kvg_path, image_size, line_width)
-                self.add_item(image_path, charname, writername)
+        for charname in charutil.kanjis.all():
+            if charname in charutil.all_kanas:
+                continue
 
-        elif mode == "radical":
-            for charname in charutil.kanjis.all():
-                if charname in charutil.all_kanas:
-                    continue
+            kvg = self.kvgcontainer.get_kvg(charname)
+            kvg_image_parameter = KvgImageParameter(image_size=image_size, padding=padding, stroke_width=stroke_width)
 
-                kvg = self.kvgcontainer.get_kvg(charname)
+            stack = [kvg]
+            while len(stack):
+                kvg = stack.pop()
 
-                stack = [kvg]
-                while len(stack):
-                    kvg = stack.pop()
+                if mode == "char":
+                    pass
+                elif mode == "radical":
                     stack += kvg.children
+                else:
+                    raise Exception(f"unknown mode: {mode}")
 
-                    if kvg.name is None:
-                        continue
+                if kvg.name is None:
+                    continue
+                
+                image_path = kvg.get_image_path(kvg_image_parameter)
+                radical = Radical.from_kvg(kvg, kvg_image_parameter)
+                self.add_item(image_path, radical, writername)
 
-                    image_path = kvg.get_image_path(self.kvgcontainer.kvg_path, image_size, line_width)
-                    radical = Radical.from_kvg(kvg, self.kvgcontainer.kvg_path, image_path=image_path)
-                    self.add_item(image_path, radical, writername)
-
-        else:
-            raise Exception(f"unknown mode: {mode}")
-
-    def add_etlcdb(self, etlcdb_path: str, etlcdb_process_type: str, etlcdb_name: str) -> None:
+    def add_etlcdb(self, etlcdb_path: str, etlcdb_process_type: str, etlcdb_name: str, radical_position: KvgImageParameter) -> None:
         self.info["datasets"].append({
             "dataset": "etlcdb",
             "etlcdb_process_type": etlcdb_process_type,
@@ -163,7 +149,13 @@ class RSDataset(Dataset):
             else:
                 raise Exception(f"unknown writer_mode: {self.writer_mode}")
 
-            self.add_item(image_path, charname, writername)
+            if self.ignore_kana and (charname in charutil.all_kanas):
+                continue
+
+            kvg = self.kvgcontainer.get_kvg(charname)
+            radical = Radical.from_kvg(kvg, radical_position)
+
+            self.add_item(image_path, radical, writername)
 
     def create_dataloader(
         self,

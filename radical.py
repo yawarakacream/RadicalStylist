@@ -6,7 +6,7 @@ from typing import Final, Optional
 
 import numpy as np
 
-from kanjivg import Kvg
+from kanjivg import Kvg, KvgImageParameter
 
 
 @dataclass
@@ -48,7 +48,7 @@ class Radical:
         self.children = kwargs.get("children", [])
 
     @staticmethod
-    def from_kvg(kvg: Kvg, kvg_path: str, image_size=64, line_width=1, image_path: Optional[str] = None):
+    def from_kvg(kvg: Kvg, kvg_image_parameter: KvgImageParameter):
         from PIL import Image
 
         name = kvg.name
@@ -57,18 +57,17 @@ class Radical:
         if kvg.part is not None:
             name = f"{name}_{kvg.part}"
         
-        if image_path is None:
-            image_path = kvg.get_image_path(kvg_path, image_size=image_size, line_width=line_width)
+        image_path = kvg.get_image_path(kvg_image_parameter)
 
         image = np.array(Image.open(image_path).convert("1")).transpose()
         nonzero_idx = image.nonzero()
         nonzero_idx[0].sort()
         nonzero_idx[1].sort()
         
-        left = (nonzero_idx[0][0] - 1) / image_size
-        right = (nonzero_idx[0][-1]) / image_size
-        top = (nonzero_idx[1][0] - 1) / image_size
-        bottom = (nonzero_idx[1][-1]) / image_size
+        left = (nonzero_idx[0][0] - 1) / kvg_image_parameter.image_size
+        right = (nonzero_idx[0][-1]) / kvg_image_parameter.image_size
+        top = (nonzero_idx[1][0] - 1) / kvg_image_parameter.image_size
+        bottom = (nonzero_idx[1][-1]) / kvg_image_parameter.image_size
 
         children = []
         if len(kvg.svg) == 0: # 角がある部首は子部首に分解しない
@@ -78,7 +77,7 @@ class Radical:
                 if kvg0.name is None:
                     stack += kvg0.children
                 else:
-                    children.append(Radical.from_kvg(kvg0, kvg_path, image_size, line_width))
+                    children.append(Radical.from_kvg(kvg0, kvg_image_parameter))
 
         return Radical(name=name, left=left, right=right, top=top, bottom=bottom, children=children)
 

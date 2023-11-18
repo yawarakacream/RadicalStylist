@@ -6,7 +6,7 @@ import torch
 
 from dataset import RSDataset
 from image_vae import StableDiffusionVae
-from kanjivg import KvgContainer
+from kanjivg import KvgContainer, KvgImageParameter
 from radical import Radical
 from radical_stylist import RadicalStylist
 from utility import pathstr
@@ -14,6 +14,7 @@ from utility import pathstr
 
 def prepare_radicallists_with_name(
     kvgcontainer: KvgContainer,
+    radical_position,
     radicalname2idx,
     chars: list[Union[str, tuple[str, list[Radical]]]]
 ):
@@ -24,7 +25,7 @@ def prepare_radicallists_with_name(
             radicallist: list[Radical] = []
 
             # 最も浅い分解
-            stack = [Radical.from_kvg(kvgcontainer.get_kvg(name), kvg_path=kvgcontainer.kvg_path)]
+            stack = [Radical.from_kvg(kvgcontainer.get_kvg(name), radical_position)]
             while len(stack):
                 r = stack.pop()
                 if r.name in radicalname2idx:
@@ -114,6 +115,7 @@ def main(
     dataloader_num_workers: int,
     shuffle_radicallist_of_char: bool,
     radical_depth: str,
+    radical_position: KvgImageParameter,
     
     corpuses: list[tuple],
     etlcdb_path: str,
@@ -137,19 +139,19 @@ def main(
         corpus_type = corpus[0]
 
         if corpus_type == "kvg":
-            _, mode, line_width = corpus
+            _, mode, padding, stroke_width = corpus
 
             if mode == "none":
                 continue
 
-            dataset.add_kvg(mode, image_size, line_width)
+            dataset.add_kvg(mode, image_size, padding, stroke_width)
 
         elif corpus_type == "etlcdb":
             _, etlcdb_process_type, etlcdb_names = corpus
             etlcdb_names = etlcdb_names.split(",")
 
             for etlcdb_name in etlcdb_names:
-                dataset.add_etlcdb(etlcdb_path, etlcdb_process_type, etlcdb_name)
+                dataset.add_etlcdb(etlcdb_path, etlcdb_process_type, etlcdb_name, radical_position)
 
         else:
             raise Exception(f"unknown corpus type: {corpus_type}")
@@ -176,13 +178,13 @@ def main(
 
         for w in test_writers:
             if w not in dataset.writername2idx:
-                raise Exception("unknown test writer: {w}")
+                raise Exception(f"unknown test writer: {w}")
             
         print("test writers:", ", ".join(test_writers))
 
     # test chars
     print("test characters:")
-    test_radicallists_with_name = prepare_radicallists_with_name(kvgcontainer, dataset.radicalname2idx, test_chars)
+    test_radicallists_with_name = prepare_radicallists_with_name(kvgcontainer, radical_position, dataset.radicalname2idx, test_chars)
     for name, radicallist in test_radicallists_with_name:
         print(f"\t{name} = {' + '.join(map(lambda r: r.name, radicallist))}")
 
@@ -221,11 +223,11 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", type=str, default="cuda:2")
+    parser.add_argument("--device", type=str, default="cuda:1")
     args = parser.parse_args()
 
     main(
-        save_path=pathstr("./output/test kvg(lw=3) writer_mode=dataset/ETL8G_400+KVG_radical (encode_type=3, radical_depth=max)"),
+        save_path=pathstr("./output/test writer_mode=dataset/ETL8G_400+KVG_radical(pad=4,sw=2) (encode_type=3, radical_depth=max)"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
         kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
 
@@ -248,10 +250,11 @@ if __name__ == "__main__":
         dataloader_num_workers=4,
         shuffle_radicallist_of_char=True,
         radical_depth="max",
+        radical_position=KvgImageParameter(image_size=64, padding=4, stroke_width=2),
 
         corpuses=[
             ("etlcdb", "black_and_white 64x64", "ETL8G_400"),
-            ("kvg", "radical", 3)
+            ("kvg", "radical", 4, 2),
         ],
         etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
 
@@ -269,7 +272,7 @@ if __name__ == "__main__":
             *"倹困麻諭",
         ],
         # test_writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
-        test_writers=[f"ETL8G_400" for _ in range(7)] + ["KVG_64x_lw=3"],
+        test_writers=[f"ETL8G_400" for _ in range(7)] + ["KVG_64x,pad=4,sw=2"],
 
         device=torch.device(args.device),
     )
