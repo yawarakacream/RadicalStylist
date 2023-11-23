@@ -13,9 +13,9 @@ import torch
 from torch import optim, nn
 from torch.utils.data import DataLoader
 
+from dataset import Radical
 from diffusion import EMA, Diffusion
 from image_vae import StableDiffusionVae
-from radical import Radical
 from unet import UNetModel
 from utility import save_images
 

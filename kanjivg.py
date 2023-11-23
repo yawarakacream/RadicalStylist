@@ -9,16 +9,6 @@ from utility import pathstr
 
 
 @dataclass
-class KvgImageParameter:
-    image_size: int
-    padding: int
-    stroke_width: int
-
-    def to_string(self):
-        return f"{self.image_size}x,pad={self.padding},sw={self.stroke_width}"
-
-
-@dataclass
 class Kvg:
     kvgid: str
     name: Optional[str]
@@ -43,13 +33,10 @@ class Kvg:
     def directory_path(self):
         return pathstr(self.container.kvg_path, "output", self.charcode[:-2] + "00", self.charcode)
 
-    def get_image_path(self, parameter: Optional[KvgImageParameter] = None, **kwargs):
-        if parameter is None:
-            parameter = KvgImageParameter(**kwargs)
-        
+    def get_image_path(self, image_size: int, padding: int, stroke_width: int):
         return pathstr(
             self.directory_path,
-            f"{parameter.to_string()} {self.kvgid}.png",
+            f"{image_size}x,pad={padding},sw={stroke_width} {self.kvgid}.png",
         )
 
 

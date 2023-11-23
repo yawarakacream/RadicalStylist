@@ -28,7 +28,7 @@ from stable_diffusion.ldm.modules.diffusionmodules.openaimodel import (
 )
 
 from character_encoder import CharacterEncoder
-from radical import Radical
+from dataset import Radical
 
 
 # https://github.com/CompVis/stable-diffusion/blob/21f890f9da3cfbeaba8e2ac3c425ee9e998d5229/ldm/modules/diffusionmodules/util.py#L102
