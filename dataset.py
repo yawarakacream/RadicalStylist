@@ -4,14 +4,14 @@ import copy
 import json
 import random
 from dataclasses import dataclass
-from typing import Any, Iterable, Literal, Optional, Union
+from typing import Any, Final, Iterable, Literal, Optional, Union
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 
 from PIL import Image
 
-from character_decomposer import BoundingBoxDecomposer, BoundingBoxRadical
+from character_decomposer import BoundingBox, BoundingBoxDecomposer
 from kanjivg import KvgContainer
 from utility import pathstr, read_image_as_tensor
 
@@ -75,12 +75,33 @@ class EtlcdbDatasetRecord:
         }
 
 
+@dataclass
+class Radical:
+    name: Final[str]
+    position: Final[Union[BoundingBox, None]]
+
+    idx_: Optional[int] = None
+
+    @property
+    def idx(self) -> int:
+        if self.idx_ is None:
+            raise Exception("idx is not registered")
+        return self.idx_
+
+    def set_idx(self, radicalname2idx):
+        self.idx_ = radicalname2idx[self.name]
+        
+    def to_dict(self) -> dict:
+        from dataclasses import asdict
+        return asdict(self)
+
+
 @dataclass(frozen=True)
 class DatasetItem:
     charname: str
     writername: Optional[str]
     image_path: str
-    radicallist: list[BoundingBoxRadical]
+    radicallist: list[Radical]
 
 
 class RSDataset(Dataset):
@@ -266,4 +287,3 @@ class RSDataset(Dataset):
 DatasetRecord = Union[KvgDatasetRecord, EtlcdbDatasetRecord]
 CharacterDecomposer = BoundingBoxDecomposer
 WriterMode = Union[Literal["none"], Literal["dataset"], Literal["all"]]
-Radical = BoundingBoxRadical

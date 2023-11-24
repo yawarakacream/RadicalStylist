@@ -4,7 +4,7 @@ from typing import Iterable, Union
 import torch
 
 import character_utility as charutil
-from character_decomposer import BoundingBoxDecomposer, BoundingBoxRadical
+from character_decomposer import BoundingBox, BoundingBoxDecomposer
 from dataset import CharacterDecomposer, DatasetRecord, EtlcdbDatasetRecord, KvgDatasetRecord, RSDataset, Radical, WriterMode
 from image_vae import StableDiffusionVae
 from kanjivg import KvgContainer
@@ -211,10 +211,10 @@ if __name__ == "__main__":
             *"何標園遠",
 
             # 部首単体
-            ("亻", [BoundingBoxRadical("亻", left=0.078125, right=0.3125, top=0.140625, bottom=0.875)]),
-            ("宀", [BoundingBoxRadical("宀", left=0.140625, right=0.859375, top=0.078125, bottom=0.375)]),
-            ("广", [BoundingBoxRadical("广", left=0.078125, right=0.78125, top=0.078125, bottom=0.84375)]),
-            ("⻌", [BoundingBoxRadical("⻌", left=0.109375, right=0.8125, top=0.15625, bottom=0.828125)]),
+            ("亻", [Radical("亻", BoundingBox(left=0.078125, right=0.3125, top=0.140625, bottom=0.875))]),
+            ("宀", [Radical("宀", BoundingBox(left=0.140625, right=0.859375, top=0.078125, bottom=0.375))]),
+            ("广", [Radical("广", BoundingBox(left=0.078125, right=0.78125, top=0.078125, bottom=0.84375))]),
+            ("⻌", [Radical("⻌", BoundingBox(left=0.109375, right=0.8125, top=0.15625, bottom=0.828125))]),
 
             # ETL8G にないが KVG にある字
             *"倹困麻諭",

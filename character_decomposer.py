@@ -7,28 +7,17 @@ import numpy as np
 
 from PIL import Image
 
+from dataset import Radical
 from kanjivg import Kvg, KvgContainer
 
 
 @dataclass
-class BoundingBoxRadical:
-    name: str
+class BoundingBox:
     left: float
     right: float
     top: float
     bottom: float
 
-    idx_: Optional[int] = None
-
-    @property
-    def idx(self) -> int:
-        if self.idx_ is None:
-            raise Exception("idx is not registered")
-        return self.idx_
-
-    def set_idx(self, radicalname2idx):
-        self.idx_ = radicalname2idx[self.name]
-        
     @property
     def center_x(self) -> float:
         return (self.left + self.right) / 2
@@ -45,10 +34,6 @@ class BoundingBoxRadical:
     def height(self) -> float:
         return self.bottom - self.top
 
-    def to_dict(self) -> dict:
-        from dataclasses import asdict
-        return asdict(self)
-
 
 class BoundingBoxDecomposer:
     depth: Literal["max"]
@@ -57,7 +42,7 @@ class BoundingBoxDecomposer:
     stroke_width: int
 
     kvgcontainer: KvgContainer
-    kvgid2radicallist: Optional[dict[str, list[BoundingBoxRadical]]]
+    kvgid2radicallist: Optional[dict[str, list[Radical]]]
     charname2kvgid: Optional[dict[str, str]]
 
     def __init__(self, depth: Literal["max"], image_size: int, padding: int, stroke_width: int):
@@ -86,8 +71,8 @@ class BoundingBoxDecomposer:
 
         self.kvgcontainer = kvgcontainer
 
-        def dfs(kvg: Kvg) -> list[BoundingBoxRadical]:
-            ret: list[BoundingBoxRadical] = []
+        def dfs(kvg: Kvg) -> list[Radical]:
+            ret: list[Radical] = []
             if len(kvg.svg) == 0:
                 for kvg0 in kvg.children:
                     ret0 = dfs(kvg0)
@@ -115,12 +100,14 @@ class BoundingBoxDecomposer:
                 top = (nonzero_idx[1][0] - 1) / self.image_size
                 bottom = (nonzero_idx[1][-1]) / self.image_size
 
-                ret.append(BoundingBoxRadical(
+                ret.append(Radical(
                     name=name,
-                    left=left,
-                    right=right,
-                    top=top,
-                    bottom=bottom,
+                    position=BoundingBox(
+                        left=left,
+                        right=right,
+                        top=top,
+                        bottom=bottom,
+                    ),
                 ))
 
             assert self.kvgid2radicallist is not None
@@ -137,10 +124,10 @@ class BoundingBoxDecomposer:
         assert self.kvgid2radicallist is not None
         return kvgid in self.kvgid2radicallist
 
-    def get_decomposition_by_kvgid(self, kvgid: str) -> list[BoundingBoxRadical]:
+    def get_decomposition_by_kvgid(self, kvgid: str) -> list[Radical]:
         assert self.kvgid2radicallist is not None
         return self.kvgid2radicallist[kvgid]
 
-    def get_decomposition_by_charname(self, charname: str) -> list[BoundingBoxRadical]:
+    def get_decomposition_by_charname(self, charname: str) -> list[Radical]:
         assert self.charname2kvgid is not None
         return self.get_decomposition_by_kvgid(self.charname2kvgid[charname])
