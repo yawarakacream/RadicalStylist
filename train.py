@@ -4,10 +4,10 @@ from typing import Iterable, Union
 import torch
 
 import character_utility as charutil
-from character_decomposer import BoundingBox, BoundingBoxDecomposer
+from character_decomposer import BoundingBoxDecomposer, ClusteringLabelDecomposer
 from dataset import CharacterDecomposer, DatasetRecord, EtlcdbDatasetRecord, KvgDatasetRecord, RSDataset, Radical, WriterMode
 from image_vae import StableDiffusionVae
-from kanjivg import KvgContainer
+from radical import BoundingBox, ClusteringLabel
 from radical_stylist import RadicalStylist
 from utility import pathstr
 
@@ -20,8 +20,13 @@ def prepare_radicallists_with_name(
     radicallists_with_name: list[tuple[str, list[Radical]]] = []
     for char in chars:
         if isinstance(char, str):
-            name = char
-            radicallist: list[Radical] = decomposer.get_decomposition_by_charname(name)
+            if char.startswith("kvg:"):
+                name = char
+                kvgid = char[len("kvg:"):]
+                radicallist = decomposer.get_decomposition_by_kvgid(kvgid)
+            else:
+                name = char
+                radicallist = decomposer.get_decomposition_by_charname(name)
         elif isinstance(char, tuple):
             name, radicallist = char
         else:
@@ -42,7 +47,6 @@ def main(
 
     save_path: str,
     stable_diffusion_path: str,
-    kvg_path: str,
     
     image_size: int,
     dim_char_embedding: int,
@@ -77,15 +81,14 @@ def main(
     # train data
     print(f"train data:")
 
-    kvgcontainer = KvgContainer(kvg_path)
-    character_decomposer.init(kvgcontainer, charutil.kanjis.all())
-
     dataset = RSDataset(
         decomposer=character_decomposer,
         writer_mode=writer_mode,
         image_size=image_size,
     )
     for record in datasets:
+        for charname in record.charnames:
+            character_decomposer.register(charname)
         dataset.add_by_record(record)
 
     print(f"\tradicals: {len(dataset.radicalname2idx)}")
@@ -159,10 +162,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main(
-        # save_path=pathstr("./output/test writer_mode=dataset/ETL8G+KVG_radical(pad=4,sw=2) (encode_type=3, radical_depth=max)"),
-        save_path=pathstr("./output/tmp"),
+        save_path=pathstr("./output/test writer_mode=dataset/ETL8G_400+KVG_radical(pad=4,sw=2) encode_type=cl_0"),
         stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
-        kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
 
         image_size=64,
         dim_char_embedding=768,
@@ -183,16 +184,21 @@ if __name__ == "__main__":
         dataloader_num_workers=4,
         shuffle_radicallist_of_char=True,
 
-        character_decomposer=BoundingBoxDecomposer(
-            depth="max",
-            image_size=64,
-            padding=4,
-            stroke_width=2,
+        # character_decomposer=BoundingBoxDecomposer(
+        #     kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+        #     depth="max",
+        #     image_size=64,
+        #     padding=4,
+        #     stroke_width=2,
+        # ),
+        character_decomposer=ClusteringLabelDecomposer(
+            kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+            radical_clustering_path=pathstr("~/datadisk/dataset/kanjivg/output-radical-clustering/edu+jis_l1,2 n_clusters=256 (imsize=16,sw=2,blur=2)"),
         ),
         datasets=[
             KvgDatasetRecord(
-                charnames=charutil.kanjis.all(),
                 kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+                charnames=charutil.kanjis.all(),
                 mode="radical",
                 image_size=64,
                 padding=4,
@@ -211,15 +217,14 @@ if __name__ == "__main__":
             *"何標園遠",
 
             # 部首単体
-            ("亻", [Radical("亻", BoundingBox(left=0.078125, right=0.3125, top=0.140625, bottom=0.875))]),
-            ("宀", [Radical("宀", BoundingBox(left=0.140625, right=0.859375, top=0.078125, bottom=0.375))]),
-            ("广", [Radical("广", BoundingBox(left=0.078125, right=0.78125, top=0.078125, bottom=0.84375))]),
-            ("⻌", [Radical("⻌", BoundingBox(left=0.109375, right=0.8125, top=0.15625, bottom=0.828125))]),
+            "kvg:05039-g1", # "倹" の "亻"
+            "kvg:05b87-g1", # "宇" の "宀"
+            "kvg:09ebb-g1", # "麻" の "广"
+            "kvg:09060-g8", # "遠" の "⻌"
 
-            # ETL8G にないが KVG にある字
+            # ETL8G にないが KanjiVG にある字
             *"倹困麻諭",
         ],
-        # test_writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
         # test_writers=[f"ETL8G" for _ in range(7)] + ["KVG_64x,pad=4,sw=2"],
         test_writers=[f"ETL8G_400" for _ in range(7)] + ["KVG_64x,pad=4,sw=2"],
 

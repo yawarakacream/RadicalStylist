@@ -4,21 +4,22 @@ import copy
 import json
 import random
 from dataclasses import dataclass
-from typing import Any, Final, Iterable, Literal, Optional, Union
+from typing import Any, Iterable, Literal, Optional, Union
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 
 from PIL import Image
 
-from character_decomposer import BoundingBox, BoundingBoxDecomposer
+from character_decomposer import BoundingBoxDecomposer, ClusteringLabelDecomposer
 from kanjivg import KvgContainer
+from radical import Radical
 from utility import pathstr, read_image_as_tensor
 
 
 class KvgDatasetRecord:
-    charnames: set[str]
     kvgcontainer: KvgContainer
+    charnames: set[str]
 
     mode: Union[Literal["character"], Literal["radical"]]
     image_size: int
@@ -28,16 +29,16 @@ class KvgDatasetRecord:
     def __init__(
         self,
 
-        charnames: Iterable[str],
         kvg_path: str,
+        charnames: Iterable[str],
 
         mode: Union[Literal["character"], Literal["radical"]],
         image_size: int,
         padding: int,
         stroke_width: int,
     ):
-        self.charnames = set(charnames)
         self.kvgcontainer = KvgContainer(kvg_path)
+        self.charnames = set(charnames)
         self.mode = mode
         self.image_size = image_size
         self.padding = padding
@@ -73,27 +74,6 @@ class EtlcdbDatasetRecord:
             "etlcdb_process_type": self.etlcdb_process_type,
             "etlcdb_name": self.etlcdb_name,
         }
-
-
-@dataclass
-class Radical:
-    name: Final[str]
-    position: Final[Union[BoundingBox, None]]
-
-    idx_: Optional[int] = None
-
-    @property
-    def idx(self) -> int:
-        if self.idx_ is None:
-            raise Exception("idx is not registered")
-        return self.idx_
-
-    def set_idx(self, radicalname2idx):
-        self.idx_ = radicalname2idx[self.name]
-        
-    def to_dict(self) -> dict:
-        from dataclasses import asdict
-        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -285,5 +265,5 @@ class RSDataset(Dataset):
 
 
 DatasetRecord = Union[KvgDatasetRecord, EtlcdbDatasetRecord]
-CharacterDecomposer = BoundingBoxDecomposer
+CharacterDecomposer = Union[BoundingBoxDecomposer, ClusteringLabelDecomposer]
 WriterMode = Union[Literal["none"], Literal["dataset"], Literal["all"]]
