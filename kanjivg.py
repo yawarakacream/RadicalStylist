@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 
 from dataclasses import dataclass
 from typing import Final, Optional
@@ -26,12 +27,9 @@ class Kvg:
         return Kvg(container=container, children=children, **dct)
     
     @property
-    def charcode(self):
-        return self.kvgid.split("-")[0]
-    
-    @property
     def directory_path(self):
-        return pathstr(self.container.kvg_path, "output", self.charcode[:-2] + "00", self.charcode)
+        root_kvgid = get_root_kvgid(self.kvgid)
+        return pathstr(self.container.kvg_path, "output", root_kvgid[:-2] + "00", root_kvgid)
 
     def get_image_path(self, image_size: int, padding: int, stroke_width: int):
         return pathstr(
@@ -40,17 +38,44 @@ class Kvg:
         )
 
 
+kvg_container_cache: dict[str, dict[str, Kvg]] = {} # {kvg_path: {kvgid: Kvg}}
+
+
 class KvgContainer:
     kvg_path: str
 
     def __init__(self, kvg_path: str):
         self.kvg_path = kvg_path
     
-    def get_kvg(self, charname):
-        charcode = format(ord(charname), "#07x")[len("0x"):]
-        directory_path = pathstr(self.kvg_path, "output", charcode[:-2] + "00", charcode)
-        json_path = pathstr(directory_path, f"{charcode}.json")
-        with open(json_path) as f:
-            dct = json.load(f)
-        return Kvg.from_dict(self, dct)
+    def get_kvg_by_charname(self, charname):
+        kvgid = charname2kvgid(charname)
+        return self.get_kvg_by_kvgid(kvgid)
     
+    def get_kvg_by_kvgid(self, kvgid):
+        root_kvgid = get_root_kvgid(kvgid)
+
+        kvg_container_cache.setdefault(self.kvg_path, {})
+
+        if root_kvgid not in kvg_container_cache[self.kvg_path]:
+            directory_path = pathstr(self.kvg_path, "output", root_kvgid[:-2] + "00", root_kvgid)
+            json_path = pathstr(directory_path, f"{root_kvgid}.json")
+            with open(json_path) as f:
+                dct = json.load(f)
+
+            root_kvg = Kvg.from_dict(self, dct)
+
+            stack = [root_kvg]
+            while len(stack):
+                kvg = stack.pop()
+                stack += kvg.children
+                kvg_container_cache[self.kvg_path][kvg.kvgid] = deepcopy(kvg)
+
+        return deepcopy(kvg_container_cache[self.kvg_path][kvgid])
+
+
+def charname2kvgid(charname: str):
+    return format(ord(charname), "#07x")[len("0x"):]
+
+
+def get_root_kvgid(kvgid: str):
+    return kvgid.split("-")[0]

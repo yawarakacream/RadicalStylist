@@ -5,7 +5,7 @@ import numpy as np
 
 from PIL import Image
 
-from kanjivg import Kvg, KvgContainer
+from kanjivg import Kvg, KvgContainer, charname2kvgid
 from radical import BoundingBox, ClusteringLabel, Radical
 from utility import pathstr
 
@@ -17,7 +17,6 @@ class BoundingBoxDecomposer:
     padding: Final[int]
     stroke_width: Final[int]
 
-    charname2kvgid: Final[dict[str, str]]
     kvgid2radicallist: Final[dict[str, list[Radical]]]
 
     def __init__(self, kvg_path: str, depth: Literal["max"], image_size: int, padding: int, stroke_width: int):
@@ -27,7 +26,6 @@ class BoundingBoxDecomposer:
         self.padding = padding
         self.stroke_width = stroke_width
 
-        self.charname2kvgid = {}
         self.kvgid2radicallist = {}
 
     @property
@@ -45,7 +43,10 @@ class BoundingBoxDecomposer:
             "stroke_width": self.stroke_width,
         }
 
-    def register(self, charname: str):
+    def register(self, kvgid: str):
+        if kvgid in self.kvgid2radicallist:
+            raise Exception(f"already registered: {kvgid}")
+        
         def dfs(kvg: Kvg) -> list[Radical]:
             assert kvg.kvgid not in self.kvgid2radicallist
             
@@ -89,23 +90,20 @@ class BoundingBoxDecomposer:
 
             self.kvgid2radicallist[kvg.kvgid] = ret
             return ret
-        
-        if charname in self.charname2kvgid:
-            return
 
-        kvg = self.kvgcontainer.get_kvg(charname)
-
-        self.charname2kvgid[charname] = kvg.kvgid
+        kvg = self.kvgcontainer.get_kvg_by_kvgid(kvgid)
         dfs(kvg)
 
     def is_kvgid_registered(self, kvgid: str) -> bool:
         return kvgid in self.kvgid2radicallist
 
     def get_decomposition_by_kvgid(self, kvgid: str) -> list[Radical]:
+        if kvgid not in self.kvgid2radicallist:
+            self.register(kvgid)
         return self.kvgid2radicallist[kvgid]
 
     def get_decomposition_by_charname(self, charname: str) -> list[Radical]:
-        return self.get_decomposition_by_kvgid(self.charname2kvgid[charname])
+        return self.get_decomposition_by_kvgid(charname2kvgid(charname))
 
 
 class ClusteringLabelDecomposer:
@@ -115,26 +113,24 @@ class ClusteringLabelDecomposer:
     kvgid2label: Final[dict[str, int]]
     decompositions: Final[dict[str, list[str]]]
 
-    charname2kvgid: Final[dict[str, str]]
     kvgid2radicallist: Final[dict[str, list[Radical]]]
 
     def __init__(self, kvg_path: str, radical_clustering_path: str):
         self.kvgcontainer = KvgContainer(kvg_path)
         self.radical_clustering_path = radical_clustering_path
 
-        with open(pathstr(self.radical_clustering_path, "label2radical2kvgids.json")) as f:
-            label2radical2kvgids: list[dict[str, list[str]]] = json.load(f)
+        with open(pathstr(self.radical_clustering_path, "label2radicalname2kvgids.json")) as f:
+            label2radicalname2kvgids: list[dict[str, list[str]]] = json.load(f)
 
         self.kvgid2label = {}
-        for label, radical2kvgids in enumerate(label2radical2kvgids):
-            for kvgids in radical2kvgids.values():
+        for label, radicalname2kvgids in enumerate(label2radicalname2kvgids):
+            for kvgids in radicalname2kvgids.values():
                 for kvgid in kvgids:
                     self.kvgid2label[kvgid] = label
         
         with open(pathstr(self.radical_clustering_path, "decompositions.json")) as f:
             self.decompositions = json.load(f)
 
-        self.charname2kvgid = {}
         self.kvgid2radicallist = {}
 
     @property
@@ -149,12 +145,13 @@ class ClusteringLabelDecomposer:
             "radical_clustering_path": self.radical_clustering_path,
         }
 
-    def register(self, charname: str):
-        kvg = self.kvgcontainer.get_kvg(charname)
-        if charname in self.charname2kvgid:
-            return
-
-        self.charname2kvgid[charname] = kvg.kvgid
+    def register(self, kvgid: str):
+        kvgid = kvgid.split("-")[0]
+        
+        if kvgid in self.kvgid2radicallist:
+            raise Exception(f"already registered: {kvgid}")
+        
+        kvg = self.kvgcontainer.get_kvg_by_kvgid(kvgid)
 
         kvgid2radicalname: dict[str, str] = {}
         stack = [kvg]
@@ -163,7 +160,10 @@ class ClusteringLabelDecomposer:
             stack += kvg0.children
 
             if kvg0.name is not None:
-                kvgid2radicalname[kvg0.kvgid] = kvg0.name
+                name = kvg0.name
+                if kvg0.part is not None:
+                    name = f"{name}_{kvg0.part}"
+                kvgid2radicalname[kvg0.kvgid] = name
         
         stack = [kvg]
         while len(stack):
@@ -186,7 +186,9 @@ class ClusteringLabelDecomposer:
         return kvgid in self.kvgid2radicallist
 
     def get_decomposition_by_kvgid(self, kvgid: str) -> list[Radical]:
+        if kvgid not in self.kvgid2radicallist:
+            self.register(kvgid)
         return self.kvgid2radicallist[kvgid]
 
     def get_decomposition_by_charname(self, charname: str) -> list[Radical]:
-        return self.get_decomposition_by_kvgid(self.charname2kvgid[charname])
+        return self.get_decomposition_by_kvgid(charname2kvgid(charname))

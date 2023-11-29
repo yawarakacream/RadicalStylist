@@ -3,26 +3,27 @@ from __future__ import annotations
 import copy
 import json
 import random
-from dataclasses import dataclass
-from typing import Any, Iterable, Literal, Optional, Union
+from typing import Final, Iterable, Literal, NamedTuple, Optional, Union
 
 import torch
 from torch.utils.data import Dataset, DataLoader
+
+from torchvision.transforms import functional as TVF
 
 from PIL import Image
 
 from character_decomposer import BoundingBoxDecomposer, ClusteringLabelDecomposer
 from kanjivg import KvgContainer
 from radical import Radical
-from utility import pathstr, read_image_as_tensor
+from utility import pathstr, convert_to_L, compose_L_images
 
 
-class KvgDatasetRecord:
+class KvgDatasetProvider:
     kvgcontainer: KvgContainer
     charnames: set[str]
 
     mode: Union[Literal["character"], Literal["radical"]]
-    image_size: int
+    slim: bool # RSDataset に未登録の部首がある文字を使わない
     padding: int
     stroke_width: int
 
@@ -33,29 +34,122 @@ class KvgDatasetRecord:
         charnames: Iterable[str],
 
         mode: Union[Literal["character"], Literal["radical"]],
-        image_size: int,
+        slim: bool,
         padding: int,
         stroke_width: int,
     ):
         self.kvgcontainer = KvgContainer(kvg_path)
         self.charnames = set(charnames)
+
         self.mode = mode
-        self.image_size = image_size
+        self.slim = slim
         self.padding = padding
         self.stroke_width = stroke_width
 
     @property
     def info(self) -> dict:
         return {
-            "name": "kvg",
             "mode": self.mode,
-            "image_size": self.image_size,
+            "slim": self.slim,
             "padding": self.padding,
             "stroke_width": self.stroke_width,
         }
-    
 
-class EtlcdbDatasetRecord:
+    def append_to(self, dataset: RSDataset):
+        if dataset.writer_mode == "none":
+            writername = None
+        else:
+            writername = f"KVG(pad={self.padding},sw={self.stroke_width})"
+
+        for charname in self.charnames:
+            kvg = self.kvgcontainer.get_kvg_by_charname(charname)
+
+            stack = [kvg]
+            while len(stack):
+                kvg = stack.pop()
+
+                if self.mode == "character":
+                    pass
+                elif self.mode == "radical":
+                    stack += kvg.children
+                else:
+                    raise Exception(f"unknown mode: {self.mode}")
+
+                if not dataset.decomposer.is_kvgid_registered(kvg.kvgid):
+                    continue
+
+                assert kvg.name is not None
+                
+                image_path = kvg.get_image_path(image_size=dataset.image_size, padding=self.padding, stroke_width=self.stroke_width)
+
+                radicallist = dataset.decomposer.get_decomposition_by_kvgid(kvg.kvgid)
+
+                if self.slim and any(map(lambda r: r.name not in dataset.radicalname2idx, radicallist)):
+                    continue
+
+                dataset.append_item(RawDatasetItem(charname=kvg.name, radicallist=radicallist, writername=writername, image_path=image_path))
+
+
+class KvgCompositionDatasetProvider:
+    kvgcontainer: KvgContainer
+    composition_name: str
+
+    padding: int
+    stroke_width: int
+
+    def __init__(
+        self,
+
+        kvg_path: str,
+        composition_name: str,
+
+        padding: int,
+        stroke_width: int,
+
+        n_limit: Optional[int],
+    ):
+        self.kvgcontainer = KvgContainer(kvg_path)
+        self.composition_name = composition_name
+
+        self.padding = padding
+        self.stroke_width = stroke_width
+
+        self.n_limit = n_limit
+
+    @property
+    def info(self):
+        return {
+            "kvg_path": self.kvgcontainer.kvg_path,
+            "composition_name": self.composition_name,
+        }
+    
+    def append_to(self, dataset: RSDataset):
+        with open(pathstr(self.kvgcontainer.kvg_path, "output-composition", f"{self.composition_name}.json")) as f:
+            info = json.load(f)
+            compositions = info["compositions"]
+            
+        if dataset.writer_mode == "none":
+            writername = None
+        else:
+            writername = f"KVG_C({self.composition_name},pad={self.padding},sw={self.stroke_width})"
+
+        for kvgids in compositions[:(self.n_limit or len(compositions))]:
+            image_paths: list[str] = []
+            radicallist: list[Radical] = []
+
+            for kvgid in kvgids:
+                kvg = self.kvgcontainer.get_kvg_by_kvgid(kvgid)
+
+                image_paths.append(kvg.get_image_path(dataset.image_size, self.padding, self.stroke_width))
+
+                decomposition = dataset.decomposer.get_decomposition_by_kvgid(kvg.kvgid)
+                assert len(decomposition) == 1
+                radicallist.append(decomposition[0])
+
+            dataset.append_item(RawDatasetItem(charname=",".join(kvgids), radicallist=radicallist, writername=writername, image_path=tuple(image_paths)))
+
+
+class EtlcdbDatasetProvider:
     etlcdb_path: str
     etlcdb_process_type: str
     etlcdb_name: str
@@ -70,29 +164,73 @@ class EtlcdbDatasetRecord:
     @property
     def info(self) -> dict:
         return {
-            "name": "etlcdb",
+            "etlcdb_path": self.etlcdb_path,
             "etlcdb_process_type": self.etlcdb_process_type,
             "etlcdb_name": self.etlcdb_name,
         }
 
+    def append_to(self, dataset: RSDataset):
+        with open(pathstr(self.etlcdb_path, f"{self.etlcdb_name}.json")) as f:
+            json_data = json.load(f)
 
-@dataclass(frozen=True)
-class DatasetItem:
+        for item in json_data:
+            relative_image_path = item["Path"] # ex) ETL4/5001/0x3042.png
+            image_path = pathstr(self.etlcdb_path, self.etlcdb_process_type, relative_image_path)
+
+            charname = item["Character"] # ex) "あ"
+            assert isinstance(charname, str)
+
+            if charname not in self.charnames:
+                continue
+
+            if dataset.writer_mode == "none":
+                writername = None
+            elif dataset.writer_mode == "dataset":
+                writername = self.etlcdb_name
+            elif dataset.writer_mode == "all":
+                serial_sheet_number = int(item["Serial Sheet Number"]) # ex) 5001
+                writername = f"{self.etlcdb_name}_{serial_sheet_number}"
+            else:
+                raise Exception(f"unknown writer_mode: {dataset.writer_mode}")
+
+            radicallist = dataset.decomposer.get_decomposition_by_charname(charname)
+
+            dataset.append_item(RawDatasetItem(
+                charname=charname,
+                radicallist=radicallist,
+                writername=writername,
+                image_path=image_path,
+            ))
+
+
+class RawDatasetItem(NamedTuple):
     charname: str
-    writername: Optional[str]
-    image_path: str
     radicallist: list[Radical]
+    writername: Optional[str]
+    image_path: Union[str, tuple[str, ...]]
+
+
+class DatasetItem(NamedTuple):
+    image: torch.Tensor
+    radicallist: list[Radical]
+    writeridx: Optional[int]
+
+
+class DataloaderItem(NamedTuple):
+    images: torch.Tensor
+    radicallists: list[list[Radical]]
+    writerindices: Optional[list[int]]
 
 
 class RSDataset(Dataset):
-    decomposer: CharacterDecomposer
-    writer_mode: WriterMode
-    image_size: int
+    decomposer: Final[CharacterDecomposer]
+    writer_mode: Final[WriterMode]
+    image_size: Final[int]
 
-    items: list[DatasetItem]
+    items: Final[list[RawDatasetItem]]
 
-    radicalname2idx: dict[str, int]
-    writername2idx: dict[str, int]
+    radicalname2idx: Final[dict[str, int]]
+    writername2idx: Final[Optional[dict[str, int]]]
 
     info: dict
 
@@ -110,7 +248,7 @@ class RSDataset(Dataset):
         self.items = []
 
         self.radicalname2idx = {}
-        self.writername2idx = {}
+        self.writername2idx = None if writer_mode == "none" else {}
 
         self.info = {
             "decomposer": decomposer.info,
@@ -123,147 +261,91 @@ class RSDataset(Dataset):
         return len(self.items)
 
     def __getitem__(self, idx: int) -> DatasetItem:
-        return self.items[idx]
-    
-    def add_item(self, item: DatasetItem):
-        self.items.append(item)
+        item = self.items[idx]
 
+        if isinstance(item.image_path, str):
+            image = Image.open(item.image_path).convert("RGB")
+        else:
+            image = compose_L_images(tuple(convert_to_L(Image.open(p)) for p in item.image_path)).image.convert("RGB")
+        
+        image = TVF.to_tensor(image)
+
+        radicallist = copy.deepcopy(item.radicallist)
+        for radical in radicallist:
+            radical.set_idx(self.radicalname2idx)
+        
+        if self.writername2idx is None:
+            assert item.writername is None
+            writeridx = None
+        else:
+            assert item.writername is not None
+            writeridx = self.writername2idx[item.writername]
+        
+        return DatasetItem(image, radicallist, writeridx)
+    
+    def append_item(self, item: RawDatasetItem):
         for radical in item.radicallist:
             self.radicalname2idx.setdefault(radical.name, len(self.radicalname2idx))
         
-        if self.writer_mode != "none":
-            assert item.writername is not None
+        if self.writer_mode == "none":
+            if item.writername is not None:
+                raise Exception("item.writername must be None")
+        else:
+            if item.writername is None:
+                raise Exception("item.writername cannot be None")
+            assert self.writername2idx is not None
             self.writername2idx.setdefault(item.writername, len(self.writername2idx))
 
-        image = Image.open(item.image_path)
-        if image.size[0] != self.image_size or image.size[1] != self.image_size:
-            raise Exception(f"invalid image size: {image.size} at {item.image_path}")
+        self.items.append(item)
 
-    def add_items(self, items: list[DatasetItem]):
-        for item in items:
-            self.add_item(item)
+        # validation
+        appended = self[len(self) - 1]
+        assert appended.image.size() == (3, self.image_size, self.image_size)
 
-    def add_kvg(self, record: KvgDatasetRecord):
-        self.info["data"].append(record.info)
+    def append_by_provider(self, provider: DatasetProvider):
+        p = len(self)
+        provider.append_to(self)
+        self.info["data"].append({
+            "class": provider.__class__.__name__,
+            "size": len(self) - p,
+            "info": provider.info,
+        })
 
-        if self.writer_mode == "none":
-            writername = None
-        else:
-            writername = f"KVG_{self.image_size}x,pad={record.padding},sw={record.stroke_width}"
-
-        for charname in record.charnames:
-            kvg = record.kvgcontainer.get_kvg(charname)
-
-            stack = [kvg]
-            while len(stack):
-                kvg = stack.pop()
-
-                if record.mode == "character":
-                    pass
-                elif record.mode == "radical":
-                    stack += kvg.children
-                else:
-                    raise Exception(f"unknown mode: {record.mode}")
-
-                if not self.decomposer.is_kvgid_registered(kvg.kvgid):
-                    continue
-
-                assert kvg.name is not None
-                
-                image_path = kvg.get_image_path(image_size=self.image_size, padding=record.padding, stroke_width=record.stroke_width)
-
-                radicallist = self.decomposer.get_decomposition_by_kvgid(kvg.kvgid)
-
-                self.add_item(DatasetItem(charname=kvg.name, writername=writername, image_path=image_path, radicallist=radicallist))
-
-    def add_etlcdb(self, record: EtlcdbDatasetRecord):
-        self.info["data"].append(record.info)
-
-        with open(pathstr(record.etlcdb_path, f"{record.etlcdb_name}.json")) as f:
-            json_data = json.load(f)
-
-        items: list[DatasetItem] = []
-
-        for item in json_data:
-            relative_image_path = item["Path"] # ex) ETL4/5001/0x3042.png
-            image_path = pathstr(record.etlcdb_path, record.etlcdb_process_type, relative_image_path)
-
-            charname = item["Character"] # ex) "あ"
-            assert isinstance(charname, str)
-
-            if charname not in record.charnames:
-                continue
-
-            if self.writer_mode == "none":
-                writername = None
-            elif self.writer_mode == "dataset":
-                writername = record.etlcdb_name
-            elif self.writer_mode == "all":
-                serial_sheet_number = int(item["Serial Sheet Number"]) # ex) 5001
-                writername = f"{record.etlcdb_name}_{serial_sheet_number}"
-            else:
-                raise Exception(f"unknown writer_mode: {self.writer_mode}")
-
-            radicallist = self.decomposer.get_decomposition_by_charname(charname)
-
-            self.add_item(DatasetItem(charname=charname, writername=writername, image_path=image_path, radicallist=radicallist))
-
-        return items
-    
-    def add_by_record(self, record: Union[KvgDatasetRecord, EtlcdbDatasetRecord]):
-        if isinstance(record, KvgDatasetRecord):
-            self.add_kvg(record)
-        elif isinstance(record, EtlcdbDatasetRecord):
-            self.add_etlcdb(record)
-        else:
-            raise Exception(f"unknown record: {record}")
-    
     def create_dataloader(
         self,
         batch_size,
-        shuffle_dataset,
+        shuffle,
         num_workers,
         shuffle_radicallist_of_char,
-    )-> DataLoader[tuple[torch.Tensor, list[Radical], Optional[list[int]]]]:
-        def collate_fn(batch: list[DatasetItem]) -> tuple[torch.Tensor, list[Radical], Optional[list[int]]]:
+    )-> DataLoader[DataloaderItem]:
+        def collate_fn(batch: list[DatasetItem]) -> DataloaderItem:
             nonlocal shuffle_radicallist_of_char
 
-            images: Any = [None for _ in range(len(batch))]
-            radicallists: list = [None for _ in range(len(batch))]
-            writerindices: Optional[list] = None
+            images: torch.Tensor = torch.stack([item.image for item in batch], 0)
+
+            radicallists: list[list[Radical]] = [item.radicallist for item in batch]
+            if shuffle_radicallist_of_char:
+                for radicallist in radicallists:
+                    random.shuffle(radicallist)
+            
+            writerindices: Optional[list[int]] = None
             if self.writername2idx is not None:
-                writerindices = [None for _ in range(len(batch))]
+                writerindices = [0 for _ in batch]
+                for i, item in enumerate(batch):
+                    assert item.writeridx is not None
+                    writerindices[i] = item.writeridx
 
-            for i, item in enumerate(batch):
-                images[i] = read_image_as_tensor(item.image_path)
-
-                radicallists[i] = copy.deepcopy(item.radicallist)
-                for r in radicallists[i]:
-                    r.set_idx(self.radicalname2idx)
-                if shuffle_radicallist_of_char:
-                    random.shuffle(radicallists[i])
-
-                if writerindices is None:
-                    assert self.writername2idx is None
-                    assert item.writername is None
-                else:
-                    assert self.writername2idx is not None
-                    assert item.writername is not None
-                    writerindices[i] = self.writername2idx[item.writername]
-
-            images = torch.stack(images, 0)
-
-            return images, radicallists, writerindices
+            return DataloaderItem(images, radicallists, writerindices)
         
         return DataLoader(
             self,
             batch_size=batch_size,
-            shuffle=shuffle_dataset,
+            shuffle=shuffle,
             num_workers=num_workers,
             collate_fn=collate_fn,
         )
 
 
-DatasetRecord = Union[KvgDatasetRecord, EtlcdbDatasetRecord]
+DatasetProvider = Union[KvgDatasetProvider, KvgCompositionDatasetProvider, EtlcdbDatasetProvider]
 CharacterDecomposer = Union[BoundingBoxDecomposer, ClusteringLabelDecomposer]
 WriterMode = Union[Literal["none"], Literal["dataset"], Literal["all"]]

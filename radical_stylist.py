@@ -13,7 +13,7 @@ import torch
 from torch import optim, nn
 from torch.utils.data import DataLoader
 
-from dataset import Radical
+from dataset import DataloaderItem, RSDataset, Radical
 from diffusion import EMA, Diffusion
 from image_vae import StableDiffusionVae
 from unet import UNetModel
@@ -199,7 +199,7 @@ class RadicalStylist:
 
     def train(
         self,
-        dataloader: DataLoader[tuple[torch.Tensor, list[Radical], Optional[list[int]]]],
+        dataloader: DataLoader[DataloaderItem],
         epochs: int,
         test_radicallists_with_name: list[tuple[str, list[Radical]]],
         test_writers: Union[list[str], int],
@@ -207,20 +207,25 @@ class RadicalStylist:
         if os.path.exists(pathstr(self.save_path, "train_info.json")):
             raise Exception("already trained")
         
-        test_radicallists = [r for _, r in test_radicallists_with_name]
+        if not isinstance(dataloader.dataset, RSDataset):
+            raise Exception(f"illegal dataset: {dataloader.dataset}")
 
         num_epochs_digit = len(str(epochs))
         num_test_radicallists_digit = len(str(len(test_radicallists_with_name)))
         
-        if epochs < 1000:
-            checkpoint_epochs = set([0, epochs - 1])
+        dataset_size = len(dataloader.dataset)
+        if 500000 <= dataset_size:
+            tmp = 10
+        elif 100000 <= dataset_size:
+            tmp = 50
         else:
-            # ex) epochs = 1000 => checkpoint_epochs = {0, 99, 199, ..., 899, 999}
-            tmp = 10 ** min(2, num_epochs_digit - 2)
-            checkpoint_epochs = set(i - 1 for i in range(tmp, epochs, tmp))
-            checkpoint_epochs.add(0)
-            checkpoint_epochs.add(epochs - 1)
-            del tmp
+            tmp = 100
+        checkpoint_epochs = set(i - 1 for i in range(tmp, epochs, tmp))
+        checkpoint_epochs.add(0)
+        checkpoint_epochs.add(epochs - 1)
+        del tmp
+        
+        test_radicallists = [r for _, r in test_radicallists_with_name]
         
         mse_loss = nn.MSELoss()
         
@@ -231,7 +236,7 @@ class RadicalStylist:
         for epoch in range(epochs):
             loss_list.append(0)
             
-            pbar = tqdm(dataloader, desc=f"{epoch=}")
+            pbar: tqdm[DataloaderItem] = tqdm(dataloader, desc=f"{epoch=}")
             for images, radicallists, writerindices in pbar:
                 # prepare batch
                 images = self.vae.encode(images)
@@ -274,7 +279,7 @@ class RadicalStylist:
                     train_info = {
                         "dataloader": {
                             "batch_size": dataloader.batch_size,
-                            "dataset": dataloader.dataset.info, # type: ignore
+                            "dataset": dataloader.dataset.info,
                         },
                         "epochs": epochs,
                         "loss": loss_list,
