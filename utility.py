@@ -46,14 +46,6 @@ def save_single_image(image, path: str):
     return image
 
 
-def read_image_as_tensor(image_path: str) -> torch.Tensor:
-    return TVF.to_tensor(Image.open(image_path).convert("RGB"))
-
-
-def rgb_to_grayscale(image: torch.Tensor) -> torch.Tensor:
-    return TVF.rgb_to_grayscale(image, num_output_channels=3)
-
-
 class LImageCompositionResult(NamedTuple):
     image: Image.Image # 合成結果
     n_blended: int # 被ったピクセルの数
