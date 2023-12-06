@@ -12,7 +12,7 @@ from torchvision.transforms import functional as TVF
 
 from PIL import Image
 
-from character_decomposer import BoundingBoxDecomposer, ClusteringLabelDecomposer
+from character_decomposer import BoundingBoxDecomposer, ClusteringLabelDecomposer, IdentityDecomposer
 from kanjivg import KvgContainer
 from radical import Radical
 from utility import pathstr, convert_to_L, compose_L_images
@@ -321,7 +321,7 @@ class RSDataset(Dataset):
         def collate_fn(batch: list[DatasetItem]) -> DataloaderItem:
             nonlocal shuffle_radicallist_of_char
 
-            images: torch.Tensor = torch.stack([item.image for item in batch], 0)
+            images: torch.Tensor = torch.stack([item.image for item in batch])
 
             radicallists: list[list[Radical]] = [item.radicallist for item in batch]
             if shuffle_radicallist_of_char:
@@ -347,5 +347,5 @@ class RSDataset(Dataset):
 
 
 DatasetProvider = Union[KvgDatasetProvider, KvgCompositionDatasetProvider, EtlcdbDatasetProvider]
-CharacterDecomposer = Union[BoundingBoxDecomposer, ClusteringLabelDecomposer]
+CharacterDecomposer = Union[BoundingBoxDecomposer, ClusteringLabelDecomposer, IdentityDecomposer]
 WriterMode = Union[Literal["none"], Literal["dataset"], Literal["all"]]

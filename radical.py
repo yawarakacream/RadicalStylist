@@ -7,7 +7,7 @@ from typing import Final, Optional, Union
 @dataclass
 class Radical:
     name: Final[str]
-    position: Final[Union[BoundingBox, ClusteringLabel]]
+    position: Final[Optional[Union[BoundingBox, ClusteringLabel]]]
 
     idx_: Optional[int] = None
 

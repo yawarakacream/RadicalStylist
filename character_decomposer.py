@@ -10,6 +10,26 @@ from radical import BoundingBox, ClusteringLabel, Radical
 from utility import pathstr
 
 
+class IdentityDecomposer:
+    @property
+    def name(self) -> str:
+        return "identity"
+    
+    @property
+    def info(self) -> dict:
+        return {"name": self.name}
+
+    def is_kvgid_registered(self, kvgid: str) -> bool:
+        return True
+
+    def get_decomposition_by_kvgid(self, kvgid: str) -> list[Radical]:
+        name = chr(int(kvgid, base=16))
+        return [Radical(name=name, position=None)]
+
+    def get_decomposition_by_charname(self, charname: str) -> list[Radical]:
+        return self.get_decomposition_by_kvgid(charname2kvgid(charname))
+
+
 class BoundingBoxDecomposer:
     kvgcontainer: Final[KvgContainer]
     depth: Final[Literal["max"]]
