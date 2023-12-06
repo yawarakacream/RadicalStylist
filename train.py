@@ -45,7 +45,8 @@ def main(
     *,
 
     save_path: str,
-    stable_diffusion_path: str,
+
+    vae_path: str,
     
     image_size: int,
     dim_char_embedding: int,
@@ -76,6 +77,8 @@ def main(
 ):
     print(f"save_path: {save_path}")
     print(f"device: {device}")
+
+    vae = StableDiffusionVae(vae_path).to(device=device)
 
     # train data
     print(f"train data:")
@@ -112,10 +115,10 @@ def main(
         assert dataset.writername2idx is not None
         assert isinstance(test_writers, list)
 
-        for w in test_writers:
-            if w not in dataset.writername2idx:
-                raise Exception(f"unknown test writer: {w}")
-            
+        unknowns = [w for w in test_writers if w not in dataset.writername2idx]
+        if len(unknowns):
+                raise Exception(f"unknown test writer:", ", ".join(unknowns))
+
         print("test writers:", ", ".join(test_writers))
 
     # test chars
@@ -123,8 +126,6 @@ def main(
     test_radicallists_with_name = prepare_radicallists_with_name(character_decomposer, dataset.radicalname2idx, test_chars)
     for name, radicallist in test_radicallists_with_name:
         print(f"\t{name} = {' + '.join(map(lambda r: r.name, radicallist))}")
-
-    vae = StableDiffusionVae(stable_diffusion_path, device)
 
     print("initializing RadicalStylist...")
     radical_stylist = RadicalStylist(
@@ -163,13 +164,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main(
-        # save_path=pathstr("./output/test writer_mode=dataset/ETL8G+KVG_radical(pad={4,8,12,16},sw=2)+KVG_C(pad={4,8,12,16},sw=2) encode_type=cl_0"),
-        save_path=pathstr("./output/test writer_mode=dataset/ETL8G*4+KVG_radical(pad={4,8,12,16},sw=2)+KVG_C(pad={4,8,12,16},sw=2)[n_limit=139169] encode_type=cl_0"),
-        stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
+        # save_path=pathstr("./output/test writer_mode=dataset/ETL8G*4+KVG_radical(pad={4,8,12,16},sw=2)+KVG_C(pad={4,8,12,16},sw=2,n_limit=139169) encode_type=cl_0"),
+        save_path=pathstr("./output/test writer_mode=dataset vae=ETL9B(epoch=0)/ETL8G_400+KVG_radical(pad={4,8,12,16},sw=2) encode_type=cl_0"),
+
+        # vae_path=pathstr("~/datadisk/stable-diffusion-v1-5/vae"),
+        vae_path=pathstr("./output/vae/ETL9B/vae_0"),
 
         image_size=64,
         dim_char_embedding=768,
-        len_radicals_of_char=12,
+        len_radicals_of_char=8,
         writer_mode="dataset",
         num_res_blocks=1,
         num_heads=4,
@@ -195,42 +198,59 @@ if __name__ == "__main__":
         # ),
         character_decomposer=ClusteringLabelDecomposer(
             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-            radical_clustering_path=pathstr("~/datadisk/dataset/kanjivg/output-radical-clustering/edu+jis_l1,2(new_decomp) n_clusters=384 (imsize=16,sw=2,blur=2)"),
+            radical_clustering_path=pathstr("~/datadisk/dataset/kanjivg/output/radical-clustering/edu+jis_l1,2 n_clusters=384 (imsize=16,sw=2,blur=2)"),
         ),
+        # datasets=[
+        #     *[
+        #         # 141841 件
+        #         EtlcdbDatasetProvider(
+        #             etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
+        #             etlcdb_process_type="black_and_white 64x64",
+        #             etlcdb_name="ETL8G",
+        #             charnames=charutil.kanjis.all(),
+        #         )
+        #         for _ in range(4)
+        #     ],
+        #     *[
+        #         # 2672 件
+        #         KvgDatasetProvider(
+        #             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+        #             charnames=charutil.kanjis.all(),
+        #             mode="radical",
+        #             slim=True,
+        #             padding=p,
+        #             stroke_width=2,
+        #         )
+        #         for p in (4, 8, 12, 16)
+        #     ],
+        #     *[
+        #         KvgCompositionDatasetProvider(
+        #             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+        #             composition_name="ETL8G(imsize=64,pad=4,sw=2,bt=0)",
+        #             padding=p,
+        #             stroke_width=2,
+        #             n_limit=139169, # 141841 - 2672
+        #         )
+        #         for p in (4, 8, 12, 16)
+        #     ],
+        # ],
         datasets=[
-            # EtlcdbDatasetProvider(
-            #     etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
-            #     etlcdb_process_type="no_background 64x64",
-            #     etlcdb_name="ETL8G",
-            #     charnames=charutil.kanjis.all(), # 141841 件
-            # ),
+            # 35240 件
+            EtlcdbDatasetProvider(
+                etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
+                etlcdb_process_type="black_and_white 64x64",
+                etlcdb_name="ETL8G_400",
+                charnames=charutil.kanjis.all(),
+            ),
             *[
-                EtlcdbDatasetProvider(
-                    etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
-                    etlcdb_process_type="no_background 64x64",
-                    etlcdb_name="ETL8G",
-                    charnames=charutil.kanjis.all(), # 141841 件
-                )
-                for _ in range(4)
-            ],
-            *[
-                KvgDatasetProvider( # slim=True with ETL8G: 2672 件
+                # 2672 件
+                KvgDatasetProvider(
                     kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
                     charnames=charutil.kanjis.all(),
                     mode="radical",
-                    slim=True,
+                    slim=False,
                     padding=p,
                     stroke_width=2,
-                )
-                for p in (4, 8, 12, 16)
-            ],
-            *[
-                KvgCompositionDatasetProvider(
-                    kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-                    composition_name=f"ETL8G(imsize=64,pad=4,sw=2,bt=0)",
-                    padding=p,
-                    stroke_width=2,
-                    n_limit=139169, # 141841 - 2672
                 )
                 for p in (4, 8, 12, 16)
             ],
@@ -249,11 +269,14 @@ if __name__ == "__main__":
             # ETL8G にないが KanjiVG にある字
             *"倹困麻諭",
         ],
-        # test_writers=[f"ETL8G_400" for _ in range(8)] + [f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)] + ["KVG_C(pad=8,sw=2)"],
+        # test_writers=[
+        #     *["ETL8G" for _ in range(8)],
+        #     *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
+        #     *[f"KVG_C(ETL8G(imsize=64,pad=4,sw=2,bt=0),pad={p},sw=2)" for p in (4, 8, 12, 16)],
+        # ],
         test_writers=[
-            *[f"ETL8G" for _ in range(8)],
+            *["ETL8G_400" for _ in range(8)],
             *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
-            *[f"KVG_C(ETL8G(imsize=64,pad=4,sw=2,bt=0),pad={p},sw=2)" for p in (4, 8, 12, 16)],
         ],
 
         device=torch.device(args.device),

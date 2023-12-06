@@ -29,7 +29,7 @@ class Kvg:
     @property
     def directory_path(self):
         root_kvgid = get_root_kvgid(self.kvgid)
-        return pathstr(self.container.kvg_path, "output", root_kvgid[:-2] + "00", root_kvgid)
+        return pathstr(self.container.kvg_path, "output", "main", root_kvgid[:-2] + "00", root_kvgid)
 
     def get_image_path(self, image_size: int, padding: int, stroke_width: int):
         return pathstr(
@@ -57,7 +57,7 @@ class KvgContainer:
         kvg_container_cache.setdefault(self.kvg_path, {})
 
         if root_kvgid not in kvg_container_cache[self.kvg_path]:
-            directory_path = pathstr(self.kvg_path, "output", root_kvgid[:-2] + "00", root_kvgid)
+            directory_path = pathstr(self.kvg_path, "output", "main", root_kvgid[:-2] + "00", root_kvgid)
             json_path = pathstr(directory_path, f"{root_kvgid}.json")
             with open(json_path) as f:
                 dct = json.load(f)

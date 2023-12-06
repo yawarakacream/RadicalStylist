@@ -10,14 +10,15 @@ add_sys_path(pathstr(os.path.dirname(__file__), "stable_diffusion"))
 from tqdm import tqdm
 
 import torch
-from torch import optim, nn
+from torch import optim
+from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from dataset import DataloaderItem, RSDataset, Radical
 from diffusion import EMA, Diffusion
 from image_vae import StableDiffusionVae
 from unet import UNetModel
-from utility import save_images
+from utility import pathstr, save_images
 
 
 class RadicalStylist:
@@ -103,16 +104,16 @@ class RadicalStylist:
         if not os.path.exists(save_path):
             raise Exception(f"not found: {save_path}")
 
-        with open(os.path.join(save_path, "radicalname2idx.json")) as f:
+        with open(pathstr(save_path, "radicalname2idx.json")) as f:
             radicalname2idx = json.load(f)
         
-        if os.path.isfile(os.path.join(save_path, "writername2idx.json")):
-            with open(os.path.join(save_path, "writername2idx.json")) as f:
+        if os.path.isfile(pathstr(save_path, "writername2idx.json")):
+            with open(pathstr(save_path, "writername2idx.json")) as f:
                 writername2idx = json.load(f)
         else:
             writername2idx = None
         
-        with open(os.path.join(save_path, "model_info.json")) as f:
+        with open(pathstr(save_path, "model_info.json")) as f:
             model_info = json.load(f)
             
             image_size = model_info["image_size"]
@@ -175,6 +176,8 @@ class RadicalStylist:
 
         with open(pathstr(self.save_path, "model_info.json"), "w") as f:
             info = {
+                "vae": self.vae.vae_path,
+
                 "image_size": self.image_size,
                 "dim_char_embedding": self.dim_char_embedding,
                 "len_radicals_of_char": self.len_radicals_of_char,
@@ -227,8 +230,6 @@ class RadicalStylist:
         
         test_radicallists = [r for _, r in test_radicallists_with_name]
         
-        mse_loss = nn.MSELoss()
-        
         loss_list = []
 
         self.unet.train()
@@ -240,7 +241,7 @@ class RadicalStylist:
             for images, radicallists, writerindices in pbar:
                 # prepare batch
                 images = self.vae.encode(images)
-                
+
                 if self.writername2idx is None:
                     writerindices = None
                 else:
@@ -249,33 +250,33 @@ class RadicalStylist:
                 # train
                 ts = self.diffusion.sample_timesteps(images.shape[0])
                 x_t, noise = self.diffusion.noise_images(images, ts)
-                
+
                 predicted_noise = self.unet(x_t, ts, radicallists, writerindices)
-                
-                loss = mse_loss(noise, predicted_noise)
+
+                loss = F.mse_loss(noise, predicted_noise, reduction="mean")
                 
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
                 self.ema.step_ema(self.ema_model, self.unet)
-                
+
                 loss = loss.item()
                 loss_list[-1] += loss
                 pbar.set_postfix(loss=loss)
-            
+
             loss_list[-1] /= len(pbar)
-            
+
             # checkpoint
             if epoch in checkpoint_epochs:
                 images_list = self.sample(test_radicallists, test_writers)
                 for i, images in enumerate(images_list):
-                    path = os.path.join(
+                    path = pathstr(
                         self.save_path,
                         "generated",
                         f"test_{str(i).zfill(num_test_radicallists_digit)}_{str(epoch + 1).zfill(num_epochs_digit)}.png")
                     save_images(images, path)
 
-                with open(os.path.join(self.save_path, "train_info.json"), "w") as f:
+                with open(pathstr(self.save_path, "train_info.json"), "w") as f:
                     train_info = {
                         "dataloader": {
                             "batch_size": dataloader.batch_size,
