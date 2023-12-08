@@ -18,7 +18,7 @@ from PIL import Image
 from diffusers import AutoencoderKL
 
 from dataset import DataloaderItem, RSDataset
-from utility import pathstr, save_images
+from utility import pathstr, get_checkpoint_epochs, save_images
 
 
 class StableDiffusionVae:
@@ -30,6 +30,11 @@ class StableDiffusionVae:
     latent_channels: Final[int] = 4
 
     def __init__(self, vae_path):
+        if not os.path.exists(vae_path):
+            # 存在しないパスを AutoencoderKL.from_pretrained に渡すと
+            # huggingface に取りに行ってしまうので前もって確認する
+            raise Exception(f"vae not found: {vae_path}")
+        
         self.vae_path = vae_path
         self.vae = AutoencoderKL.from_pretrained(self.vae_path) # type: ignore
         assert isinstance(self.vae, AutoencoderKL)
@@ -81,11 +86,9 @@ class StableDiffusionVae:
         if not isinstance(dataloader.dataset, RSDataset):
             raise Exception(f"illegal dataset: {dataloader.dataset}")
 
-        tmp = 10
-        checkpoint_epochs = set(i - 1 for i in range(tmp, epochs, tmp))
-        checkpoint_epochs.add(0)
-        checkpoint_epochs.add(epochs - 1)
-        del tmp
+        num_epochs_digit = len(str(epochs))
+
+        checkpoint_epochs = get_checkpoint_epochs(epochs, step=10)
 
         test_images = []
         for p in test_image_paths:
@@ -96,7 +99,11 @@ class StableDiffusionVae:
             test_images,
             pathstr(save_path, "reconstruction", f"test_original.png"),
         )
-
+        save_images(
+            self.decode(self.encode(test_images)),
+            pathstr(save_path, "reconstruction", f"test_before.png"),
+        )
+        
         self.optimizer = optim.AdamW(self.vae.parameters(), lr=0.0001)
 
         loss_list: list[float] = []
@@ -130,9 +137,12 @@ class StableDiffusionVae:
                 test_loss_list.append(test_loss)
                 
             if epoch in checkpoint_epochs:
+                checkpoint_name = str(epoch + 1).zfill(num_epochs_digit)
+                print(f"checkpoint {checkpoint_name}:")
+
                 save_images(
                     test_reconstructions,
-                    pathstr(save_path, "reconstruction", f"test_{epoch}.png"),
+                    pathstr(save_path, "reconstruction", f"test_{checkpoint_name}.png"),
                 )
 
                 plt.title("loss")
@@ -141,6 +151,8 @@ class StableDiffusionVae:
                 plt.legend()
                 plt.savefig(pathstr(save_path, "loss.png"))
                 plt.close()
+
+                print(f"test loss: {test_loss_list[-1]}")
 
                 with open(pathstr(save_path, "train_info.json"), "w") as f:
                     train_info = {
@@ -157,4 +169,4 @@ class StableDiffusionVae:
                     }
                     json.dump(train_info, f)
 
-                self.vae.save_pretrained(pathstr(save_path, "vae"))
+                self.vae.save_pretrained(pathstr(save_path, f"vae_{checkpoint_name}"))
