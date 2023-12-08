@@ -30,6 +30,13 @@ def char2code(char: str) -> str:
 #     return chr(int(code, base=16))
 
 
+def get_checkpoint_epochs(epochs: int, *, step: int) -> set[int]:
+    ret = set(i - 1 for i in range(step, epochs, step))
+    ret.add(0)
+    ret.add(epochs - 1)
+    return ret
+
+
 def save_images(images, path: str):
     m = torch.mean(images, dtype=torch.float).item()
     pad_value = 1 if m < 0.5 else 0

@@ -5,7 +5,9 @@ from typing import Optional, Union
 
 from utility import pathstr, add_sys_path
 
+
 add_sys_path(pathstr(os.path.dirname(__file__), "stable_diffusion"))
+
 
 from tqdm import tqdm
 
@@ -18,7 +20,7 @@ from dataset import DataloaderItem, RSDataset, Radical
 from diffusion import EMA, Diffusion
 from image_vae import StableDiffusionVae
 from unet import UNetModel
-from utility import pathstr, save_images
+from utility import pathstr, get_checkpoint_epochs, save_images
 
 
 class RadicalStylist:
@@ -34,7 +36,7 @@ class RadicalStylist:
         vae: StableDiffusionVae,
         
         image_size: int,
-        dim_char_embedding: int,
+        dim_radical_embedding: int,
         len_radicals_of_char: int,
         num_res_blocks: int,
         num_heads: int,
@@ -57,7 +59,7 @@ class RadicalStylist:
         self.vae = vae
         
         self.image_size = image_size
-        self.dim_char_embedding = dim_char_embedding
+        self.dim_radical_embedding = dim_radical_embedding
         self.len_radicals_of_char = len_radicals_of_char
         self.num_res_blocks = num_res_blocks
         self.num_heads = num_heads
@@ -73,14 +75,14 @@ class RadicalStylist:
         self.unet = UNetModel(
             image_size=self.vae.calc_latent_size(self.image_size),
             in_channels=self.vae.latent_channels,
-            model_channels=self.dim_char_embedding,
+            model_channels=self.dim_radical_embedding,
             out_channels=self.vae.latent_channels,
             num_res_blocks=self.num_res_blocks,
             attention_resolutions=(1, 1),
             channel_mult=(1, 1),
             num_classes=(len(self.writername2idx) if self.writername2idx is not None else None),
             num_heads=self.num_heads,
-            context_dim=self.dim_char_embedding,
+            context_dim=self.dim_radical_embedding,
             vocab_size=len(self.radicalname2idx),
             len_radicals_of_char=len_radicals_of_char,
         ).to(device)
@@ -117,7 +119,7 @@ class RadicalStylist:
             model_info = json.load(f)
             
             image_size = model_info["image_size"]
-            dim_char_embedding = model_info["dim_char_embedding"]
+            dim_radical_embedding = model_info["dim_radical_embedding"]
             len_radicals_of_char = model_info["len_radicals_of_char"]
             num_res_blocks = model_info["num_res_blocks"]
             num_heads = model_info["num_heads"]
@@ -137,7 +139,7 @@ class RadicalStylist:
             vae=vae,
 
             image_size=image_size,
-            dim_char_embedding=dim_char_embedding,
+            dim_radical_embedding=dim_radical_embedding,
             len_radicals_of_char=len_radicals_of_char,
             num_res_blocks=num_res_blocks,
             num_heads=num_heads,
@@ -179,7 +181,7 @@ class RadicalStylist:
                 "vae": self.vae.vae_path,
 
                 "image_size": self.image_size,
-                "dim_char_embedding": self.dim_char_embedding,
+                "dim_radical_embedding": self.dim_radical_embedding,
                 "len_radicals_of_char": self.len_radicals_of_char,
                 "num_res_blocks": self.num_res_blocks,
                 "num_heads": self.num_heads,
@@ -216,17 +218,12 @@ class RadicalStylist:
         num_epochs_digit = len(str(epochs))
         num_test_radicallists_digit = len(str(len(test_radicallists_with_name)))
         
-        dataset_size = len(dataloader.dataset)
-        if 500000 <= dataset_size:
-            tmp = 10
-        elif 100000 <= dataset_size:
-            tmp = 50
+        if 500000 <= len(dataloader.dataset):
+            checkpoint_epochs = get_checkpoint_epochs(epochs, step=10)
+        elif 100000 <= len(dataloader.dataset):
+            checkpoint_epochs = get_checkpoint_epochs(epochs, step=50)
         else:
-            tmp = 100
-        checkpoint_epochs = set(i - 1 for i in range(tmp, epochs, tmp))
-        checkpoint_epochs.add(0)
-        checkpoint_epochs.add(epochs - 1)
-        del tmp
+            checkpoint_epochs = get_checkpoint_epochs(epochs, step=100)
         
         test_radicallists = [r for _, r in test_radicallists_with_name]
         
@@ -268,12 +265,16 @@ class RadicalStylist:
 
             # checkpoint
             if epoch in checkpoint_epochs:
+                checkpoint_name = str(epoch + 1).zfill(num_epochs_digit)
+                print(f"checkpoint {checkpoint_name}:")
+
                 images_list = self.sample(test_radicallists, test_writers)
                 for i, images in enumerate(images_list):
                     path = pathstr(
                         self.save_path,
                         "generated",
-                        f"test_{str(i).zfill(num_test_radicallists_digit)}_{str(epoch + 1).zfill(num_epochs_digit)}.png")
+                        f"test_{str(i).zfill(num_test_radicallists_digit)}_{checkpoint_name}.png",
+                    )
                     save_images(images, path)
 
                 with open(pathstr(self.save_path, "train_info.json"), "w") as f:
