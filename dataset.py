@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import random
 from typing import Final, Iterable, Literal, NamedTuple, Optional, Union
 
@@ -19,13 +20,13 @@ from utility import pathstr, convert_to_L, compose_L_images
 
 
 class KvgDatasetProvider:
-    kvgcontainer: KvgContainer
-    charnames: set[str]
+    kvgcontainer: Final[KvgContainer]
+    charnames: Final[set[str]]
 
-    mode: Union[Literal["character"], Literal["radical"]]
-    slim: bool # RSDataset に未登録の部首がある文字を使わない
-    padding: int
-    stroke_width: int
+    mode: Final[Union[Literal["character"], Literal["radical"]]]
+    slim: Final[bool] # RSDataset に未登録の部首がある文字を使わない
+    padding: Final[int]
+    stroke_width: Final[int]
 
     def __init__(
         self,
@@ -91,11 +92,11 @@ class KvgDatasetProvider:
 
 
 class KvgCompositionDatasetProvider:
-    kvgcontainer: KvgContainer
-    composition_name: str
+    kvgcontainer: Final[KvgContainer]
+    composition_name: Final[str]
 
-    padding: int
-    stroke_width: int
+    padding: Final[int]
+    stroke_width: Final[int]
 
     def __init__(
         self,
@@ -124,7 +125,7 @@ class KvgCompositionDatasetProvider:
         }
     
     def append_to(self, dataset: RSDataset):
-        with open(pathstr(self.kvgcontainer.kvg_path, "output-composition", f"{self.composition_name}.json")) as f:
+        with open(pathstr(self.kvgcontainer.kvg_path, "output", "composition", f"{self.composition_name}.json")) as f:
             info = json.load(f)
             compositions = info["compositions"]
             
@@ -150,10 +151,10 @@ class KvgCompositionDatasetProvider:
 
 
 class EtlcdbDatasetProvider:
-    etlcdb_path: str
-    etlcdb_process_type: str
-    etlcdb_name: str
-    charnames: set[str]
+    etlcdb_path: Final[str]
+    etlcdb_process_type: Final[str]
+    etlcdb_name: Final[str]
+    charnames: Final[set[str]]
 
     def __init__(self, etlcdb_path: str, etlcdb_process_type: str, etlcdb_name: str, charnames: Iterable[str]):
         self.etlcdb_path = etlcdb_path
@@ -200,6 +201,58 @@ class EtlcdbDatasetProvider:
                 radicallist=radicallist,
                 writername=writername,
                 image_path=image_path,
+            ))
+
+
+class RandomFontDatasetProvider:
+    font_dataset_path: Final[str]
+
+    font_name: Final[str]
+    n_items: Final[int]
+
+    def __init__(
+        self,
+
+        font_dataset_path: str,
+
+        font_name: str,
+        n_items: int,
+    ):
+        self.font_dataset_path = font_dataset_path
+
+        self.font_name = font_name
+        self.n_items = n_items
+
+    @property
+    def info(self):
+        return {
+            "font_dataset_path": self.font_dataset_path,
+
+            "font_name": self.font_name,
+            "n_items": self.n_items,
+        }
+    
+    def append_to(self, dataset: RSDataset):
+        if dataset.writer_mode != "none":
+            raise NotImplementedError()
+
+        parent_path = pathstr(self.font_dataset_path, f"{self.font_name} | random")
+        image_paths = os.listdir(parent_path)
+        image_paths.sort()
+        if len(image_paths) < self.n_items:
+            raise Exception("there are not enough images")
+        
+        for image_path in image_paths[:self.n_items]:
+            charcode = image_path.split(" ")[0]
+            charname = chr(int(charcode, base=16))
+
+            radicallist = dataset.decomposer.get_decomposition_by_charname(charname)
+
+            dataset.append_item(RawDatasetItem(
+                charname=charname,
+                radicallist=radicallist,
+                writername=None,
+                image_path=pathstr(parent_path, image_path),
             ))
 
 
@@ -346,6 +399,6 @@ class RSDataset(Dataset):
         )
 
 
-DatasetProvider = Union[KvgDatasetProvider, KvgCompositionDatasetProvider, EtlcdbDatasetProvider]
+DatasetProvider = Union[KvgDatasetProvider, KvgCompositionDatasetProvider, EtlcdbDatasetProvider, RandomFontDatasetProvider]
 CharacterDecomposer = Union[BoundingBoxDecomposer, ClusteringLabelDecomposer, IdentityDecomposer]
 WriterMode = Union[Literal["none"], Literal["dataset"], Literal["all"]]
