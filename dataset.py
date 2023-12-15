@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import glob
 import json
 import os
 import random
@@ -81,14 +82,14 @@ class KvgDatasetProvider:
 
                 assert kvg.name is not None
                 
-                image_path = kvg.get_image_path(image_size=dataset.image_size, padding=self.padding, stroke_width=self.stroke_width)
+                imagepath = kvg.get_imagepath(image_size=dataset.image_size, padding=self.padding, stroke_width=self.stroke_width)
 
                 radicallist = dataset.decomposer.get_decomposition_by_kvgid(kvg.kvgid)
 
                 if self.slim and any(map(lambda r: r.name not in dataset.radicalname2idx, radicallist)):
                     continue
 
-                dataset.append_item(RawDatasetItem(charname=kvg.name, radicallist=radicallist, writername=writername, image_path=image_path))
+                dataset.append_item(RawDatasetItem(charname=kvg.name, radicallist=radicallist, writername=writername, imagepath=imagepath))
 
 
 class KvgCompositionDatasetProvider:
@@ -135,39 +136,39 @@ class KvgCompositionDatasetProvider:
             writername = f"KVG_C({self.composition_name},pad={self.padding},sw={self.stroke_width})"
 
         for kvgids in compositions[:(self.n_limit or len(compositions))]:
-            image_paths: list[str] = []
+            imagepaths: list[str] = []
             radicallist: list[Radical] = []
 
             for kvgid in kvgids:
                 kvg = self.kvgcontainer.get_kvg_by_kvgid(kvgid)
 
-                image_paths.append(kvg.get_image_path(dataset.image_size, self.padding, self.stroke_width))
+                imagepaths.append(kvg.get_imagepath(dataset.image_size, self.padding, self.stroke_width))
 
                 decomposition = dataset.decomposer.get_decomposition_by_kvgid(kvg.kvgid)
                 assert len(decomposition) == 1
                 radicallist.append(decomposition[0])
 
-            dataset.append_item(RawDatasetItem(charname=",".join(kvgids), radicallist=radicallist, writername=writername, image_path=tuple(image_paths)))
+            dataset.append_item(RawDatasetItem(charname=",".join(kvgids), radicallist=radicallist, writername=writername, imagepath=tuple(imagepaths)))
 
 
 class EtlcdbDatasetProvider:
     etlcdb_path: Final[str]
-    etlcdb_process_type: Final[str]
     etlcdb_name: Final[str]
+    preprocess_type: Final[str]
     charnames: Final[set[str]]
 
-    def __init__(self, etlcdb_path: str, etlcdb_process_type: str, etlcdb_name: str, charnames: Iterable[str]):
+    def __init__(self, etlcdb_path: str, etlcdb_name: str, preprocess_type: str, charnames: Iterable[str]):
         self.etlcdb_path = etlcdb_path
-        self.etlcdb_process_type = etlcdb_process_type
         self.etlcdb_name = etlcdb_name
+        self.preprocess_type = preprocess_type
         self.charnames = set(charnames)
 
     @property
     def info(self) -> dict:
         return {
             "etlcdb_path": self.etlcdb_path,
-            "etlcdb_process_type": self.etlcdb_process_type,
             "etlcdb_name": self.etlcdb_name,
+            "preprocess_type": self.preprocess_type,
         }
 
     def append_to(self, dataset: RSDataset):
@@ -175,8 +176,8 @@ class EtlcdbDatasetProvider:
             json_data = json.load(f)
 
         for item in json_data:
-            relative_image_path = item["Path"] # ex) ETL4/5001/0x3042.png
-            image_path = pathstr(self.etlcdb_path, self.etlcdb_process_type, relative_image_path)
+            rel_imagepath = item["Path"] # ex) ETL4/5001/0x3042.png
+            abs_imagepath = pathstr(self.etlcdb_path, self.preprocess_type, rel_imagepath)
 
             charname = item["Character"] # ex) "あ"
             assert isinstance(charname, str)
@@ -200,7 +201,7 @@ class EtlcdbDatasetProvider:
                 charname=charname,
                 radicallist=radicallist,
                 writername=writername,
-                image_path=image_path,
+                imagepath=abs_imagepath,
             ))
 
 
@@ -236,14 +237,14 @@ class RandomFontDatasetProvider:
         if dataset.writer_mode != "none":
             raise NotImplementedError()
 
-        parent_path = pathstr(self.font_dataset_path, f"{self.font_name} | random")
-        image_paths = os.listdir(parent_path)
-        image_paths.sort()
-        if len(image_paths) < self.n_items:
+        parentpath = pathstr(self.font_dataset_path, f"{self.font_name} | random")
+        imagepaths = os.listdir(parentpath)
+        imagepaths.sort()
+        if len(imagepaths) < self.n_items:
             raise Exception("there are not enough images")
         
-        for image_path in image_paths[:self.n_items]:
-            charcode = image_path.split(" ")[0]
+        for imagepath in imagepaths[:self.n_items]:
+            charcode = imagepath.split(" ")[0]
             charname = chr(int(charcode, base=16))
 
             radicallist = dataset.decomposer.get_decomposition_by_charname(charname)
@@ -252,7 +253,63 @@ class RandomFontDatasetProvider:
                 charname=charname,
                 radicallist=radicallist,
                 writername=None,
-                image_path=pathstr(parent_path, image_path),
+                imagepath=pathstr(parentpath, imagepath),
+            ))
+
+
+class Kodomo2024DatasetProvider:
+    kodomo2024_path: Final[str]
+    process_type: str
+    charnames: Final[set[str]]
+
+    def __init__(self, kodomo2024_path: str, process_type: str, charnames: Iterable[str]):
+        self.kodomo2024_path = kodomo2024_path
+        self.process_type = process_type
+        self.charnames = set(charnames)
+
+    @property
+    def info(self):
+        return {
+            "kodomo2024_path": self.kodomo2024_path,
+            "process_type": self.process_type,
+        }
+    
+    def append_to(self, dataset: RSDataset):
+        with open(pathstr(self.kodomo2024_path, "kodomo_noclass.json")) as f:
+            relimgpath2charname = json.load(f)
+        
+        train_images_root = pathstr(self.kodomo2024_path, "kodomo_charimgs_tt")
+        if len(self.process_type):
+            train_images_root += f" {self.process_type}"
+        train_images_root = pathstr(train_images_root, "train")
+        
+        for abs_imagepath in glob.iglob(pathstr(train_images_root, "**/*.png"), recursive=True):
+            rel_imagepath = os.path.relpath(abs_imagepath, train_images_root)
+
+            # 不要な画像は除いてある (?)
+            if rel_imagepath not in relimgpath2charname:
+                continue
+
+            charname = relimgpath2charname[rel_imagepath]
+            if charname not in self.charnames:
+                continue
+
+            radicallist = dataset.decomposer.get_decomposition_by_charname(charname)
+
+            if dataset.writer_mode == "none":
+                writername = None
+            elif dataset.writer_mode == "dataset":
+                writername = "kodomo2024"
+            elif dataset.writer_mode == "all":
+                writername = f"kodomo2024({rel_imagepath.split('/')[1]})"
+            else:
+                raise Exception(f"unknown writer_mode: {dataset.writer_mode}")
+            
+            dataset.append_item(RawDatasetItem(
+                charname=charname,
+                radicallist=radicallist,
+                writername=writername,
+                imagepath=abs_imagepath,
             ))
 
 
@@ -260,7 +317,7 @@ class RawDatasetItem(NamedTuple):
     charname: str
     radicallist: list[Radical]
     writername: Optional[str]
-    image_path: Union[str, tuple[str, ...]]
+    imagepath: Union[str, tuple[str, ...]]
 
 
 class DatasetItem(NamedTuple):
@@ -316,10 +373,10 @@ class RSDataset(Dataset):
     def __getitem__(self, idx: int) -> DatasetItem:
         item = self.items[idx]
 
-        if isinstance(item.image_path, str):
-            image = Image.open(item.image_path).convert("RGB")
+        if isinstance(item.imagepath, str):
+            image = Image.open(item.imagepath).convert("RGB")
         else:
-            image = compose_L_images(tuple(convert_to_L(Image.open(p)) for p in item.image_path)).image.convert("RGB")
+            image = compose_L_images(tuple(convert_to_L(Image.open(p)) for p in item.imagepath)).image.convert("RGB")
         
         image = TVF.to_tensor(image)
 
@@ -399,6 +456,6 @@ class RSDataset(Dataset):
         )
 
 
-DatasetProvider = Union[KvgDatasetProvider, KvgCompositionDatasetProvider, EtlcdbDatasetProvider, RandomFontDatasetProvider]
+DatasetProvider = Union[KvgDatasetProvider, KvgCompositionDatasetProvider, EtlcdbDatasetProvider, RandomFontDatasetProvider, Kodomo2024DatasetProvider]
 CharacterDecomposer = Union[BoundingBoxDecomposer, ClusteringLabelDecomposer, IdentityDecomposer]
 WriterMode = Union[Literal["none"], Literal["dataset"], Literal["all"]]

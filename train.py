@@ -1,11 +1,11 @@
-import argparse
+from argparse import ArgumentParser
 from typing import Iterable, Union
 
 import torch
 
 import character_utility as charutil
 from character_decomposer import BoundingBoxDecomposer, ClusteringLabelDecomposer
-from dataset import CharacterDecomposer, DatasetProvider, EtlcdbDatasetProvider, KvgCompositionDatasetProvider, KvgDatasetProvider, RSDataset, Radical, WriterMode
+from dataset import CharacterDecomposer, DatasetProvider, EtlcdbDatasetProvider, Kodomo2024DatasetProvider, KvgCompositionDatasetProvider, KvgDatasetProvider, RSDataset, Radical, WriterMode
 from image_vae import StableDiffusionVae
 from radical_stylist import RadicalStylist
 from utility import pathstr
@@ -83,7 +83,7 @@ def main(
     # train data
     print(f"train data:")
 
-    dataset = RSDataset(
+    train_dataset = RSDataset(
         decomposer=character_decomposer,
         writer_mode=writer_mode,
         image_size=image_size,
@@ -91,15 +91,15 @@ def main(
     print("\tprovider:")
     for provider in datasets:
         print(f"\t\t{provider.__class__.__name__}: ", end="", flush=True)
-        l = len(dataset)
-        dataset.append_by_provider(provider)
-        print(len(dataset) - l)
+        l = len(train_dataset)
+        train_dataset.append_by_provider(provider)
+        print(len(train_dataset) - l)
 
-    print(f"\tradicals: {len(dataset.radicalname2idx)}")
-    print(f"\twriters: {dataset.writername2idx and len(dataset.writername2idx)}")
-    print(f"\ttotal data size: {len(dataset)}")
+    print(f"\tradicals: {len(train_dataset.radicalname2idx)}")
+    print(f"\twriters: {train_dataset.writername2idx and len(train_dataset.writername2idx)}")
+    print(f"\ttotal data size: {len(train_dataset)}")
 
-    dataloader = dataset.create_dataloader(
+    train_dataloader = train_dataset.create_dataloader(
         batch_size=batch_size,
         shuffle=shuffle_dataset,
         num_workers=dataloader_num_workers,
@@ -108,14 +108,14 @@ def main(
 
     # test writer
     if writer_mode == "none":
-        assert dataset.writername2idx is None
+        assert train_dataset.writername2idx is None
         assert isinstance(test_writers, int) and 0 < test_writers
         
     else:
-        assert dataset.writername2idx is not None
+        assert train_dataset.writername2idx is not None
         assert isinstance(test_writers, list)
 
-        unknowns = [w for w in test_writers if w not in dataset.writername2idx]
+        unknowns = [w for w in test_writers if w not in train_dataset.writername2idx]
         if len(unknowns):
                 raise Exception(f"unknown test writer:", ", ".join(unknowns))
 
@@ -123,7 +123,7 @@ def main(
 
     # test chars
     print("test characters:")
-    test_radicallists_with_name = prepare_radicallists_with_name(character_decomposer, dataset.radicalname2idx, test_chars)
+    test_radicallists_with_name = prepare_radicallists_with_name(character_decomposer, train_dataset.radicalname2idx, test_chars)
     for name, radicallist in test_radicallists_with_name:
         print(f"\t{name} = {' + '.join(map(lambda r: r.name, radicallist))}")
 
@@ -131,8 +131,8 @@ def main(
     radical_stylist = RadicalStylist(
         save_path=save_path,
 
-        radicalname2idx=dataset.radicalname2idx,
-        writername2idx=dataset.writername2idx,
+        radicalname2idx=train_dataset.radicalname2idx,
+        writername2idx=train_dataset.writername2idx,
 
         vae=vae,
 
@@ -150,25 +150,45 @@ def main(
 
         device=device,
     )
-    radical_stylist.save(exist_ok=False)
+    radical_stylist.save(model_name="init", exist_ok=False)
     print("initialized.")
         
     print("training started!")
-    radical_stylist.train(dataloader, epochs, test_radicallists_with_name, test_writers)
+    radical_stylist.train(
+        train_dataloader,
+        epochs,
+        test_radicallists_with_name,
+        test_writers,
+    )
     print("training finished!")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser()
     parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
 
+    nlp2024_datasets = [
+        # 127657 件
+        EtlcdbDatasetProvider(
+            etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
+            etlcdb_name="ETL8G_onlykanji_train",
+            preprocess_type="black_and_white 64x64",
+            charnames=charutil.kanjis.all,
+        ),
+        # 3719 件
+        Kodomo2024DatasetProvider(
+            kodomo2024_path=pathstr("~/datadisk/dataset/kodomo2024"),
+            process_type="black_and_white 64x64",
+            charnames=charutil.kanjis.all,
+        ),
+    ]
+
     main(
-        save_path=pathstr("./output/test writer_mode=dataset vae=SanariFont001(n_random=262140,epoch=30)/ETL8G_400+KVG_radical(pad={4,8,12,16},sw=2) encode_type=cl_0"),
-        # save_path=pathstr("./output/test writer_mode=dataset vae=noto*2(n_random=65536,epoch=80)/ETL8G*4+KVG_radical(pad={4,8,12,16},sw=2)+KVG_C(pad={4,8,12,16},sw=2,n_limit=139169) encode_type=cl_0"),
+        save_path=pathstr("./output/nlp2024/nlp2024+KVG(pad={4,8,12,16},sw=2) radenc=cl_0"),
 
         # vae_path=pathstr("~/datadisk/stable-diffusion-v1-5/vae"),
-        vae_path=pathstr("./output/vae/SanariFont001(n_items=262140)/vae_030"),
+        vae_path=pathstr("./output/vae/SanariFont001(n_items=262140)/vae_100"),
 
         image_size=64,
         dim_radical_embedding=768,
@@ -184,7 +204,7 @@ if __name__ == "__main__":
         diffusion_beta_end=0.02,
 
         batch_size=244,
-        epochs=10000,
+        epochs=5000,
         shuffle_dataset=True,
         dataloader_num_workers=4,
         shuffle_radicallist_of_char=True,
@@ -198,36 +218,36 @@ if __name__ == "__main__":
         # ),
         character_decomposer=ClusteringLabelDecomposer(
             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-            radical_clustering_path=pathstr("~/datadisk/dataset/kanjivg/output/radical-clustering/edu+jis_l1,2 n_clusters=384 (imsize=16,sw=2,blur=2)"),
+            radical_clustering_name="edu+jis_l1,2 n_clusters=384 (imsize=16,sw=2,blur=2)",
         ),
-        datasets=[
-            # 35240 件
-            EtlcdbDatasetProvider(
-                etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
-                etlcdb_process_type="black_and_white 64x64",
-                etlcdb_name="ETL8G_400",
-                charnames=charutil.kanjis.all,
-            ),
-            *[
-                # 2672 件
-                KvgDatasetProvider(
-                    kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-                    charnames=charutil.kanjis.all,
-                    mode="radical",
-                    slim=False,
-                    padding=p,
-                    stroke_width=2,
-                )
-                for p in (4, 8, 12, 16)
-            ],
-        ],
+        # datasets=[
+        #     # 35240 件
+        #     EtlcdbDatasetProvider(
+        #         etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
+        #         etlcdb_name="ETL8G_400",
+        #         preprocess_type="black_and_white 64x64",
+        #         charnames=charutil.kanjis.all,
+        #     ),
+        #     *[
+        #         # 2672 件
+        #         KvgDatasetProvider(
+        #             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+        #             charnames=charutil.kanjis.all,
+        #             mode="radical",
+        #             slim=False,
+        #             padding=p,
+        #             stroke_width=2,
+        #         )
+        #         for p in (4, 8, 12, 16)
+        #     ],
+        # ],
         # datasets=[
         #     *[
         #         # 141841 件
         #         EtlcdbDatasetProvider(
         #             etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
-        #             etlcdb_process_type="black_and_white 64x64",
         #             etlcdb_name="ETL8G",
+        #             preprocess_type="black_and_white 64x64",
         #             charnames=charutil.kanjis.all,
         #         )
         #         for _ in range(4)
@@ -244,13 +264,43 @@ if __name__ == "__main__":
         #         )
         #         for p in (4, 8, 12, 16)
         #     ],
+        # ],
+        datasets=[
+            *nlp2024_datasets,
+            *[
+                # 2672 件
+                KvgDatasetProvider(
+                    kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+                    charnames=charutil.kanjis.all,
+                    mode="radical",
+                    slim=False,
+                    padding=p,
+                    stroke_width=2,
+                )
+                for p in (4, 8, 12, 16)
+            ],
+        ],
+        # datasets=[
+        #     *nlp2024_datasets,
+        #     *[
+        #         # 2672 件
+        #         KvgDatasetProvider(
+        #             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+        #             charnames=charutil.kanjis.all,
+        #             mode="radical",
+        #             slim=False,
+        #             padding=p,
+        #             stroke_width=2,
+        #         )
+        #         for p in (4, 8, 12, 16)
+        #     ],
         #     *[
         #         KvgCompositionDatasetProvider(
         #             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
         #             composition_name="ETL8G(imsize=64,pad=4,sw=2,bt=0)",
         #             padding=p,
         #             stroke_width=2,
-        #             n_limit=139169, # 141841 - 2672
+        #             n_limit=,
         #         )
         #         for p in (4, 8, 12, 16)
         #     ],
@@ -259,6 +309,9 @@ if __name__ == "__main__":
         test_chars=[
             # ETL8G にある字
             *"何標園遠",
+
+            # kodomo2024 にある字 (頻出順)
+            *"海虫魚自",
 
             # 部首単体
             "kvg:05039-g1", # 亻 (倹)
@@ -269,12 +322,18 @@ if __name__ == "__main__":
             # ETL8G にないが KanjiVG にある字
             *"倹困麻諭",
         ],
+        # test_writers=[
+        #     *["ETL8G_400" for _ in range(8)],
+        #     *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
+        # ],
         test_writers=[
-            *["ETL8G_400" for _ in range(8)],
+            *["ETL8G_onlykanji_train" for _ in range(8)],
+            *["kodomo2024" for _ in range(8)],
             *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
         ],
         # test_writers=[
-        #     *["ETL8G" for _ in range(8)],
+        #     *["ETL8G_onlykanji_train" for _ in range(8)],
+        #     *["kodomo2024" for _ in range(8)],
         #     *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
         #     *[f"KVG_C(ETL8G(imsize=64,pad=4,sw=2,bt=0),pad={p},sw=2)" for p in (4, 8, 12, 16)],
         # ],

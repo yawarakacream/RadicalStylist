@@ -1,4 +1,4 @@
-import argparse
+from argparse import ArgumentParser
 from typing import Iterable
 
 import torch
@@ -24,7 +24,7 @@ def main(
 
     datasets: Iterable[DatasetProvider],
     
-    test_image_paths: list[str],
+    test_imagepaths: list[str],
 
     device: torch.device,
 ):
@@ -51,17 +51,17 @@ def main(
         shuffle_radicallist_of_char=False,
     )
 
-    print(f"test images:", "\n\t".join(test_image_paths), sep="\n")
+    print(f"test images:", "\n\t".join(test_imagepaths), sep="\n")
 
     vae = StableDiffusionVae(original_vae_path).to(device=device)
 
     print("training started!")
-    vae.train(save_path, dataloader, epochs, test_image_paths)
+    vae.train(save_path, dataloader, epochs, test_imagepaths)
     print("training finished!")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser()
     parser.add_argument("--device", type=str, default="cuda:1")
     args = parser.parse_args()
 
@@ -104,7 +104,7 @@ if __name__ == "__main__":
             ),
         ],
 
-        test_image_paths=[
+        test_imagepaths=[
             # ETL4 あ
             pathstr("~/datadisk/dataset/etlcdb/black_and_white 64x64/ETL4/5001/000000.png"),
             pathstr("~/datadisk/dataset/etlcdb/black_and_white 64x64/ETL4/5002/000051.png"),

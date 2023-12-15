@@ -1,6 +1,8 @@
 from __future__ import annotations
+from genericpath import isfile
 
 import json
+import os
 from copy import deepcopy
 
 from dataclasses import dataclass
@@ -31,7 +33,7 @@ class Kvg:
         root_kvgid = get_root_kvgid(self.kvgid)
         return pathstr(self.container.kvg_path, "output", "main", root_kvgid[:-2] + "00", root_kvgid)
 
-    def get_image_path(self, image_size: int, padding: int, stroke_width: int):
+    def get_imagepath(self, image_size: int, padding: int, stroke_width: int):
         return pathstr(
             self.directory_path,
             f"{image_size}x,pad={padding},sw={stroke_width} {self.kvgid}.png",
@@ -59,6 +61,10 @@ class KvgContainer:
         if root_kvgid not in kvg_container_cache[self.kvg_path]:
             directory_path = pathstr(self.kvg_path, "output", "main", root_kvgid[:-2] + "00", root_kvgid)
             json_path = pathstr(directory_path, f"{root_kvgid}.json")
+
+            if not os.path.isfile(json_path):
+                raise Exception(f"unknown kvgid: {root_kvgid}")
+
             with open(json_path) as f:
                 dct = json.load(f)
 
@@ -74,6 +80,8 @@ class KvgContainer:
 
 
 def charname2kvgid(charname: str):
+    if len(charname) != 1:
+        raise Exception(f"illegal charname: {charname}")
     return format(ord(charname), "#07x")[len("0x"):]
 
 

@@ -74,7 +74,7 @@ class StableDiffusionVae:
         save_path: str,
         dataloader: DataLoader[DataloaderItem],
         epochs: int,
-        test_image_paths: list[str],
+        test_imagepaths: list[str],
     ) -> None:
         self.vae.requires_grad_(True)
 
@@ -91,7 +91,7 @@ class StableDiffusionVae:
         checkpoint_epochs = get_checkpoint_epochs(epochs, step=10)
 
         test_images = []
-        for p in test_image_paths:
+        for p in test_imagepaths:
             with Image.open(p) as image:
                 test_images.append(TVF.to_tensor(image.convert("RGB")))
         test_images = torch.stack(test_images).to(device=self.device)
@@ -165,7 +165,7 @@ class StableDiffusionVae:
                             "train": loss_list,
                             "test": test_loss_list,
                         },
-                        "test": test_image_paths,
+                        "test": test_imagepaths,
                     }
                     json.dump(train_info, f)
 

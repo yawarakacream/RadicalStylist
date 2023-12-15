@@ -87,8 +87,8 @@ class BoundingBoxDecomposer:
                 if kvg.part is not None:
                     name = f"{name}_{kvg.part}"
                 
-                image_path = kvg.get_image_path(image_size=self.image_size, padding=self.padding, stroke_width=self.stroke_width)
-                image = np.array(Image.open(image_path).convert("1")).transpose()
+                imagepath = kvg.get_imagepath(image_size=self.image_size, padding=self.padding, stroke_width=self.stroke_width)
+                image = np.array(Image.open(imagepath).convert("1")).transpose()
                 nonzero_idx = image.nonzero()
                 nonzero_idx[0].sort()
                 nonzero_idx[1].sort()
@@ -128,18 +128,24 @@ class BoundingBoxDecomposer:
 
 class ClusteringLabelDecomposer:
     kvgcontainer: Final[KvgContainer]
-    radical_clustering_path: Final[str]
+    radical_clustering_name: Final[str]
 
     kvgid2label: Final[dict[str, int]]
     decompositions: Final[dict[str, list[str]]]
 
     kvgid2radicallist: Final[dict[str, list[Radical]]]
 
-    def __init__(self, kvg_path: str, radical_clustering_path: str):
+    def __init__(self, kvg_path: str, radical_clustering_name: str):
         self.kvgcontainer = KvgContainer(kvg_path)
-        self.radical_clustering_path = radical_clustering_path
+        self.radical_clustering_name = radical_clustering_name
 
-        with open(pathstr(self.radical_clustering_path, "label2radicalname2kvgids.json")) as f:
+        radical_clustering_output_path = pathstr(
+            self.kvgcontainer.kvg_path,
+            "output",
+            "radical-clustering",
+            self.radical_clustering_name,
+        )
+        with open(pathstr(radical_clustering_output_path, "label2radicalname2kvgids.json")) as f:
             label2radicalname2kvgids: list[dict[str, list[str]]] = json.load(f)
 
         self.kvgid2label = {}
@@ -148,7 +154,7 @@ class ClusteringLabelDecomposer:
                 for kvgid in kvgids:
                     self.kvgid2label[kvgid] = label
         
-        with open(pathstr(self.radical_clustering_path, "decompositions.json")) as f:
+        with open(pathstr(radical_clustering_output_path, "decompositions.json")) as f:
             self.decompositions = json.load(f)
 
         self.kvgid2radicallist = {}
@@ -162,7 +168,7 @@ class ClusteringLabelDecomposer:
         return {
             "name": self.name,
             "kvg_path": self.kvgcontainer.kvg_path,
-            "radical_clustering_path": self.radical_clustering_path,
+            "radical_clustering_name": self.radical_clustering_name,
         }
 
     def register(self, kvgid: str):

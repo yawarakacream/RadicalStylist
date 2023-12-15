@@ -60,6 +60,15 @@ all_kanas = hiraganas + hiraganas2 + katakanas + katakanas2
 
 
 class Kanjis:
+    def __init__(self):
+        tmp = set()
+        for i in range(1, 6 + 1):
+            tmp.update(self.education(i))
+        for i in range(1, 2 + 1):
+            tmp.update(self.jis_level(i))
+        self.all = frozenset(tmp)
+
+
     # 教育漢字
     def education(self, year) -> tuple[str, ...]:
         if year == 1: return tuple("一音雨円王火花貝学休九玉空気下月見犬五口校金左三山四子糸字耳七車手十出女小正上森人水生青赤石夕千先川草早足村大男竹虫中町天田土二日入年白八百本名木目文右力立林六")
@@ -157,16 +166,6 @@ class Kanjis:
         for i in range(ps[level - 1], ps[level]):
             ret += self.jis_row(i)
         ret = tuple(ret)
-        return ret
-    
-    @property
-    def all(self) -> frozenset[str]:
-        ret = set()
-        for i in range(1, 6 + 1):
-            ret.update(self.education(i))
-        for i in range(1, 2 + 1):
-            ret.update(self.jis_level(i))
-        ret = frozenset(ret)
         return ret
 
 
