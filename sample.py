@@ -1,38 +1,39 @@
-import argparse
+from argparse import ArgumentParser
 from glob import glob
 from typing import Union
 
 import torch
 
+from character_decomposer import BoundingBoxDecomposer, ClusteringLabelDecomposer
+from dataset import CharacterDecomposer, Radical
 from radical import Radical
-from image_vae import StableDiffusionVae
 from radical_stylist import RadicalStylist
 from train import prepare_radicallists_with_name
-from utility import pathstr, save_images, char2code, create_charname2radicaljson
+from utility import pathstr, char2code, save_images
 
 
 def main(
     save_path: str,
-    stable_diffusion_path: str,
-    radicals_data_path: str,
-    
+
+    character_decomposer: CharacterDecomposer,
     chars: list[Union[str, tuple[str, list[Radical]]]],
     writers: Union[int, list[str]],
     
     device: torch.device,
 ):
     print(f"save_path: {save_path}")
-    
-    charname2radicaljson = create_charname2radicaljson(radicals_data_path)
-
-    vae = StableDiffusionVae(stable_diffusion_path, device)
+    print(f"device: {device}")
 
     print("loading RadicalStylist...")
-    rs = RadicalStylist.load(save_path=save_path, vae=vae, device=device)
+    rs = RadicalStylist.load(save_path=save_path, device=device)
     print("loaded.")
 
-    radicallists_with_name = prepare_radicallists_with_name(charname2radicaljson, rs.radicalname2idx, chars)
-    radicallists = [radicallist for _, radicallist in radicallists_with_name]
+    radicallists_with_name = prepare_radicallists_with_name(character_decomposer, rs.radicalname2idx, chars)
+    for name, radicallist in radicallists_with_name:
+        print(f"\t{name} = {' + '.join(map(lambda r: r.name, radicallist))}")
+    
+    radicallists = [r for _, r in radicallists_with_name]
+
     images_list = rs.sample(radicallists, writers)
 
     save_directory = pathstr(rs.save_path, "generated")
@@ -55,30 +56,34 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser()
     parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
-    
+
     main(
         save_path=pathstr("./output/rs ignore_writer ETL8G_400"),
-        stable_diffusion_path=pathstr("~/datadisk/stable-diffusion-v1-5"),
-        radicals_data_path=pathstr("~/datadisk/dataset/kanjivg/build/all.json"),
 
+        character_decomposer=ClusteringLabelDecomposer(
+            kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+            radical_clustering_name=pathstr("edu+jis_l1,2 n_clusters=384 (imsize=16,sw=2,blur=2)"),
+        ),
         chars=[
-            # 訓練データにある字
+            # ETL8G にある字
             *"何標園遠",
 
             # 部首単体
-            ("亻", [Radical("亻", left=0.078125, right=0.3125, top=0.140625, bottom=0.875)]),
-            ("宀", [Radical("宀", left=0.140625, right=0.859375, top=0.078125, bottom=0.375)]),
-            ("广", [Radical("广", left=0.078125, right=0.78125, top=0.078125, bottom=0.84375)]),
-            ("⻌", [Radical("⻌", left=0.109375, right=0.8125, top=0.15625, bottom=0.828125)]),
+            "kvg:05039-g1", # 亻 (倹)
+            "kvg:05b87-g1", # 宀 (宇)
+            "kvg:09ebb-g1", # 广 (麻)
+            "kvg:09060-g8", # ⻌ (遠)
 
-            # 訓練データにないが部首データにある字
+            # ETL8G にないが KanjiVG にある字
             *"倹困麻諭",
         ],
-        # writers=[f"ETL8G_400_{i}" for i in range(1, 8 + 1)],
-        writers=8,
+        writers=[
+            *["ETL8G_400" for _ in range(8)],
+            *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
+        ],
 
         device=torch.device(args.device),
     )

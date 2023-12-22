@@ -38,6 +38,7 @@ class RadicalStylist:
         image_size: int,
         dim_radical_embedding: int,
         len_radicals_of_char: int,
+        radical_position: str,
         num_res_blocks: int,
         num_heads: int,
         
@@ -57,10 +58,12 @@ class RadicalStylist:
         self.writername2idx = writername2idx
         
         self.vae = vae
+        self.vae.to(device=self.device)
         
         self.image_size = image_size
         self.dim_radical_embedding = dim_radical_embedding
         self.len_radicals_of_char = len_radicals_of_char
+        self.radical_position = radical_position
         self.num_res_blocks = num_res_blocks
         self.num_heads = num_heads
         
@@ -85,6 +88,7 @@ class RadicalStylist:
             context_dim=self.dim_radical_embedding,
             vocab_size=len(self.radicalname2idx),
             len_radicals_of_char=len_radicals_of_char,
+            radical_position=radical_position,
         ).to(device)
         
         self.optimizer = optim.AdamW(self.unet.parameters(), lr=self.learning_rate)
@@ -102,7 +106,7 @@ class RadicalStylist:
         )
     
     @staticmethod
-    def load(save_path: str, device: torch.device):
+    def load(*, save_path: str, model_name: str, device: torch.device):
         if not os.path.exists(save_path):
             raise Exception(f"not found: {save_path}")
 
@@ -123,6 +127,7 @@ class RadicalStylist:
             image_size = model_info["image_size"]
             dim_radical_embedding = model_info["dim_radical_embedding"]
             len_radicals_of_char = model_info["len_radicals_of_char"]
+            radical_position = model_info["radical_position"]
             num_res_blocks = model_info["num_res_blocks"]
             num_heads = model_info["num_heads"]
             
@@ -132,7 +137,7 @@ class RadicalStylist:
             diffusion_beta_start = model_info["diffusion_beta_start"]
             diffusion_beta_end = model_info["diffusion_beta_end"]
         
-        vae = StableDiffusionVae(vae_path).to(device=device)
+        vae = StableDiffusionVae(vae_path)
 
         instance = RadicalStylist(
             save_path=save_path,
@@ -145,6 +150,7 @@ class RadicalStylist:
             image_size=image_size,
             dim_radical_embedding=dim_radical_embedding,
             len_radicals_of_char=len_radicals_of_char,
+            radical_position=radical_position,
             num_res_blocks=num_res_blocks,
             num_heads=num_heads,
 
@@ -157,12 +163,12 @@ class RadicalStylist:
             device=device,
         )
         
-        instance.unet.load_state_dict(torch.load(pathstr(save_path, "models", "unet.pt")))
+        instance.unet.load_state_dict(torch.load(pathstr(save_path, "models", model_name, "unet.pt"), map_location=device))
         instance.unet.eval()
 
-        instance.optimizer.load_state_dict(torch.load(pathstr(save_path, "models", "optimizer.pt")))
+        instance.optimizer.load_state_dict(torch.load(pathstr(save_path, "models", model_name, "optimizer.pt"), map_location=device))
 
-        instance.ema_model.load_state_dict(torch.load(pathstr(save_path, "models", "ema_model.pt")))
+        instance.ema_model.load_state_dict(torch.load(pathstr(save_path, "models", model_name, "ema_model.pt"), map_location=device))
         instance.ema_model.eval()
         
         return instance
@@ -182,11 +188,12 @@ class RadicalStylist:
 
         with open(pathstr(self.save_path, "model_info.json"), "w") as f:
             info = {
-                "vae": self.vae.vae_path,
+                "vae_path": self.vae.vae_path,
 
                 "image_size": self.image_size,
                 "dim_radical_embedding": self.dim_radical_embedding,
                 "len_radicals_of_char": self.len_radicals_of_char,
+                "radical_position": self.radical_position,
                 "num_res_blocks": self.num_res_blocks,
                 "num_heads": self.num_heads,
                 
@@ -244,7 +251,7 @@ class RadicalStylist:
                 images = self.vae.encode(images)
 
                 if self.writername2idx is None:
-                    writerindices = None
+                    assert writerindices is None
                 else:
                     writerindices = torch.tensor(writerindices, dtype=torch.long, device=self.device)
 
@@ -335,7 +342,7 @@ class RadicalStylist:
             
         else:
             raise Exception()
-            
+
         sampled_latents = self.diffusion.sample(self.ema_model, radicallists, writerindices)
         sampled_images = self.vae.decode(sampled_latents)
         

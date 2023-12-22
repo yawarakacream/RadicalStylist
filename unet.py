@@ -27,8 +27,8 @@ from stable_diffusion.ldm.modules.diffusionmodules.openaimodel import (
     Downsample,
 )
 
-from character_encoder import CharacterEncoder
 from dataset import Radical
+from radicallist_encoder import BoundingBoxRadicallistEncoder, ClusteringLabelRadicallistEncoder, NonpositionalRadicallistEncoder
 
 
 # https://github.com/CompVis/stable-diffusion/blob/21f890f9da3cfbeaba8e2ac3c425ee9e998d5229/ldm/modules/diffusionmodules/util.py#L102
@@ -483,6 +483,7 @@ class UNetModel(nn.Module):
         vocab_size: int,                  # custom transformer support
 
         len_radicals_of_char: int,
+        radical_position: str,
     ):
         super().__init__()
 
@@ -518,7 +519,14 @@ class UNetModel(nn.Module):
             nn.Linear(time_embed_dim, time_embed_dim),
         )
         
-        self.char_encoder = CharacterEncoder(vocab_size, context_dim, len_radicals_of_char)
+        if radical_position == "none":
+            self.char_encoder = NonpositionalRadicallistEncoder(vocab_size, context_dim, len_radicals_of_char)
+        elif radical_position == "bounding-box":
+            self.char_encoder = BoundingBoxRadicallistEncoder(vocab_size, context_dim, len_radicals_of_char)
+        elif radical_position == "clustering-label":
+            self.char_encoder = ClusteringLabelRadicallistEncoder(vocab_size, context_dim, len_radicals_of_char)
+        else:
+            raise Exception(f"unknown radical position: {radical_position}")
         
         # ==================== INPUT BLOCK ====================
         

@@ -5,7 +5,7 @@ import torch
 
 import character_utility as charutil
 from character_decomposer import BoundingBoxDecomposer, ClusteringLabelDecomposer
-from dataset import CharacterDecomposer, DatasetProvider, EtlcdbDatasetProvider, Kodomo2024DatasetProvider, KvgCompositionDatasetProvider, KvgDatasetProvider, RSDataset, Radical, WriterMode
+from dataset import CharacterDecomposer, DatasetProvider, EtlcdbDatasetProvider, Kodomo2023DatasetProvider, KvgCompositionDatasetProvider, KvgDatasetProvider, RSDataset, Radical, WriterMode
 from image_vae import StableDiffusionVae
 from radical_stylist import RadicalStylist
 from utility import pathstr
@@ -51,6 +51,7 @@ def main(
     image_size: int,
     dim_radical_embedding: int,
     len_radicals_of_char: int,
+    radical_position: str,
     writer_mode: WriterMode,
     num_res_blocks: int,
     num_heads: int,
@@ -78,7 +79,7 @@ def main(
     print(f"save_path: {save_path}")
     print(f"device: {device}")
 
-    vae = StableDiffusionVae(vae_path).to(device=device)
+    vae = StableDiffusionVae(vae_path)
 
     # train data
     print(f"train data:")
@@ -139,6 +140,7 @@ def main(
         image_size=image_size,
         dim_radical_embedding=dim_radical_embedding,
         len_radicals_of_char=len_radicals_of_char,
+        radical_position=radical_position,
         num_res_blocks=num_res_blocks,
         num_heads=num_heads,
 
@@ -168,24 +170,44 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
 
-    nlp2024_datasets = [
-        # 127657 件
+    nlp2024_kana_datasets = [
+        #
         EtlcdbDatasetProvider(
             etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
-            etlcdb_name="ETL8G_onlykanji_train",
+            etlcdb_name="ETL8G_onlyhira_train",
             preprocess_type="black_and_white 64x64",
-            charnames=charutil.kanjis.all,
+        ),
+        #
+        EtlcdbDatasetProvider(
+            etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
+            etlcdb_name="ETL5_train",
+            preprocess_type="black_and_white 64x64",
+        ),
+        #
+        Kodomo2023DatasetProvider(
+            kodomo2023_path=pathstr("~/datadisk/dataset/kodomo2023"),
+            process_type="black_and_white 64x64",
+            charnames=charutil.all_kanas,
+        ),
+    ]
+
+    nlp2024_kanji_datasets = [
+        # 133281 件
+        EtlcdbDatasetProvider(
+            etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
+            etlcdb_name="ETL9G_onlykanji_train(sheet=1-1000)",
+            preprocess_type="black_and_white 64x64",
         ),
         # 3719 件
-        Kodomo2024DatasetProvider(
-            kodomo2024_path=pathstr("~/datadisk/dataset/kodomo2024"),
+        Kodomo2023DatasetProvider(
+            kodomo2023_path=pathstr("~/datadisk/dataset/kodomo2023"),
             process_type="black_and_white 64x64",
             charnames=charutil.kanjis.all,
         ),
     ]
 
     main(
-        save_path=pathstr("./output/nlp2024/nlp2024+KVG(pad={4,8,12,16},sw=2) radenc=cl_0"),
+        save_path=pathstr("./output/nlp2024/nlp2024(kanji)+KVG(pad={4,8,12,16},sw=2) radenc=cl"),
 
         # vae_path=pathstr("~/datadisk/stable-diffusion-v1-5/vae"),
         vae_path=pathstr("./output/vae/SanariFont001(n_items=262140)/vae_100"),
@@ -193,6 +215,7 @@ if __name__ == "__main__":
         image_size=64,
         dim_radical_embedding=768,
         len_radicals_of_char=8,
+        radical_position="clustering-label",
         writer_mode="dataset",
         num_res_blocks=1,
         num_heads=4,
@@ -220,123 +243,39 @@ if __name__ == "__main__":
             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
             radical_clustering_name="edu+jis_l1,2 n_clusters=384 (imsize=16,sw=2,blur=2)",
         ),
-        # datasets=[
-        #     # 35240 件
-        #     EtlcdbDatasetProvider(
-        #         etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
-        #         etlcdb_name="ETL8G_400",
-        #         preprocess_type="black_and_white 64x64",
-        #         charnames=charutil.kanjis.all,
-        #     ),
-        #     *[
-        #         # 2672 件
-        #         KvgDatasetProvider(
-        #             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-        #             charnames=charutil.kanjis.all,
-        #             mode="radical",
-        #             slim=False,
-        #             padding=p,
-        #             stroke_width=2,
-        #         )
-        #         for p in (4, 8, 12, 16)
-        #     ],
-        # ],
-        # datasets=[
-        #     *[
-        #         # 141841 件
-        #         EtlcdbDatasetProvider(
-        #             etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
-        #             etlcdb_name="ETL8G",
-        #             preprocess_type="black_and_white 64x64",
-        #             charnames=charutil.kanjis.all,
-        #         )
-        #         for _ in range(4)
-        #     ],
-        #     *[
-        #         # 2672 件
-        #         KvgDatasetProvider(
-        #             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-        #             charnames=charutil.kanjis.all,
-        #             mode="radical",
-        #             slim=True,
-        #             padding=p,
-        #             stroke_width=2,
-        #         )
-        #         for p in (4, 8, 12, 16)
-        #     ],
-        # ],
         datasets=[
-            *nlp2024_datasets,
+            *nlp2024_kanji_datasets,
             *[
-                # 2672 件
+                # 9964 件
                 KvgDatasetProvider(
                     kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
                     charnames=charutil.kanjis.all,
                     mode="radical",
-                    slim=False,
                     padding=p,
                     stroke_width=2,
                 )
                 for p in (4, 8, 12, 16)
             ],
         ],
-        # datasets=[
-        #     *nlp2024_datasets,
-        #     *[
-        #         # 2672 件
-        #         KvgDatasetProvider(
-        #             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-        #             charnames=charutil.kanjis.all,
-        #             mode="radical",
-        #             slim=False,
-        #             padding=p,
-        #             stroke_width=2,
-        #         )
-        #         for p in (4, 8, 12, 16)
-        #     ],
-        #     *[
-        #         KvgCompositionDatasetProvider(
-        #             kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-        #             composition_name="ETL8G(imsize=64,pad=4,sw=2,bt=0)",
-        #             padding=p,
-        #             stroke_width=2,
-        #             n_limit=,
-        #         )
-        #         for p in (4, 8, 12, 16)
-        #     ],
-        # ],
 
         test_chars=[
-            # ETL8G にある字
-            *"何標園遠",
-
-            # kodomo2024 にある字 (頻出順)
+            # ETL9G にある & kodomo2023 にある
             *"海虫魚自",
+
+            # ETL9G にある & kodomo2023 にない
+            *"何標園遠",
 
             # 部首単体
             "kvg:05039-g1", # 亻 (倹)
             "kvg:05b87-g1", # 宀 (宇)
             "kvg:09ebb-g1", # 广 (麻)
             "kvg:09060-g8", # ⻌ (遠)
-
-            # ETL8G にないが KanjiVG にある字
-            *"倹困麻諭",
         ],
-        # test_writers=[
-        #     *["ETL8G_400" for _ in range(8)],
-        #     *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
-        # ],
         test_writers=[
-            *["ETL8G_onlykanji_train" for _ in range(8)],
-            *["kodomo2024" for _ in range(8)],
+            *["kodomo2023" for _ in range(8)],
+            *["ETL9G_onlykanji_train(sheet=1-1000)" for _ in range(8)],
             *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
         ],
-        # test_writers=[
-        #     *["ETL8G_onlykanji_train" for _ in range(8)],
-        #     *["kodomo2024" for _ in range(8)],
-        #     *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
-        #     *[f"KVG_C(ETL8G(imsize=64,pad=4,sw=2,bt=0),pad={p},sw=2)" for p in (4, 8, 12, 16)],
-        # ],
 
         device=torch.device(args.device),
     )

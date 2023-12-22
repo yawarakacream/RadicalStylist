@@ -25,7 +25,6 @@ class KvgDatasetProvider:
     charnames: Final[set[str]]
 
     mode: Final[Union[Literal["character"], Literal["radical"]]]
-    slim: Final[bool] # RSDataset に未登録の部首がある文字を使わない
     padding: Final[int]
     stroke_width: Final[int]
 
@@ -36,7 +35,6 @@ class KvgDatasetProvider:
         charnames: Iterable[str],
 
         mode: Union[Literal["character"], Literal["radical"]],
-        slim: bool,
         padding: int,
         stroke_width: int,
     ):
@@ -44,7 +42,6 @@ class KvgDatasetProvider:
         self.charnames = set(charnames)
 
         self.mode = mode
-        self.slim = slim
         self.padding = padding
         self.stroke_width = stroke_width
 
@@ -52,7 +49,6 @@ class KvgDatasetProvider:
     def info(self) -> dict:
         return {
             "mode": self.mode,
-            "slim": self.slim,
             "padding": self.padding,
             "stroke_width": self.stroke_width,
         }
@@ -85,9 +81,6 @@ class KvgDatasetProvider:
                 imagepath = kvg.get_imagepath(image_size=dataset.image_size, padding=self.padding, stroke_width=self.stroke_width)
 
                 radicallist = dataset.decomposer.get_decomposition_by_kvgid(kvg.kvgid)
-
-                if self.slim and any(map(lambda r: r.name not in dataset.radicalname2idx, radicallist)):
-                    continue
 
                 dataset.append_item(RawDatasetItem(charname=kvg.name, radicallist=radicallist, writername=writername, imagepath=imagepath))
 
@@ -155,13 +148,11 @@ class EtlcdbDatasetProvider:
     etlcdb_path: Final[str]
     etlcdb_name: Final[str]
     preprocess_type: Final[str]
-    charnames: Final[set[str]]
 
-    def __init__(self, etlcdb_path: str, etlcdb_name: str, preprocess_type: str, charnames: Iterable[str]):
+    def __init__(self, etlcdb_path: str, etlcdb_name: str, preprocess_type: str):
         self.etlcdb_path = etlcdb_path
         self.etlcdb_name = etlcdb_name
         self.preprocess_type = preprocess_type
-        self.charnames = set(charnames)
 
     @property
     def info(self) -> dict:
@@ -181,9 +172,6 @@ class EtlcdbDatasetProvider:
 
             charname = item["Character"] # ex) "あ"
             assert isinstance(charname, str)
-
-            if charname not in self.charnames:
-                continue
 
             if dataset.writer_mode == "none":
                 writername = None
@@ -257,28 +245,28 @@ class RandomFontDatasetProvider:
             ))
 
 
-class Kodomo2024DatasetProvider:
-    kodomo2024_path: Final[str]
+class Kodomo2023DatasetProvider:
+    kodomo2023_path: Final[str]
     process_type: str
     charnames: Final[set[str]]
 
-    def __init__(self, kodomo2024_path: str, process_type: str, charnames: Iterable[str]):
-        self.kodomo2024_path = kodomo2024_path
+    def __init__(self, kodomo2023_path: str, process_type: str, charnames: Iterable[str]):
+        self.kodomo2023_path = kodomo2023_path
         self.process_type = process_type
         self.charnames = set(charnames)
 
     @property
     def info(self):
         return {
-            "kodomo2024_path": self.kodomo2024_path,
+            "kodomo2023_path": self.kodomo2023_path,
             "process_type": self.process_type,
         }
     
     def append_to(self, dataset: RSDataset):
-        with open(pathstr(self.kodomo2024_path, "kodomo_noclass.json")) as f:
+        with open(pathstr(self.kodomo2023_path, "kodomo_noclass.json")) as f:
             relimgpath2charname = json.load(f)
         
-        train_images_root = pathstr(self.kodomo2024_path, "kodomo_charimgs_tt")
+        train_images_root = pathstr(self.kodomo2023_path, "kodomo_charimgs_tt")
         if len(self.process_type):
             train_images_root += f" {self.process_type}"
         train_images_root = pathstr(train_images_root, "train")
@@ -299,9 +287,9 @@ class Kodomo2024DatasetProvider:
             if dataset.writer_mode == "none":
                 writername = None
             elif dataset.writer_mode == "dataset":
-                writername = "kodomo2024"
+                writername = "kodomo2023"
             elif dataset.writer_mode == "all":
-                writername = f"kodomo2024({rel_imagepath.split('/')[1]})"
+                writername = f"kodomo2023({rel_imagepath.split('/')[1]})"
             else:
                 raise Exception(f"unknown writer_mode: {dataset.writer_mode}")
             
@@ -456,6 +444,6 @@ class RSDataset(Dataset):
         )
 
 
-DatasetProvider = Union[KvgDatasetProvider, KvgCompositionDatasetProvider, EtlcdbDatasetProvider, RandomFontDatasetProvider, Kodomo2024DatasetProvider]
+DatasetProvider = Union[KvgDatasetProvider, KvgCompositionDatasetProvider, EtlcdbDatasetProvider, RandomFontDatasetProvider, Kodomo2023DatasetProvider]
 CharacterDecomposer = Union[BoundingBoxDecomposer, ClusteringLabelDecomposer, IdentityDecomposer]
 WriterMode = Union[Literal["none"], Literal["dataset"], Literal["all"]]
