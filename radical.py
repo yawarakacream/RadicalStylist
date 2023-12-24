@@ -23,7 +23,9 @@ class Radical:
     @staticmethod
     def from_dict(dct) -> Radical:
         position = dct.pop("position")
-        if "left" in position:
+        if position is None:
+            position = None
+        elif "left" in position:
             position = BoundingBox(**position)
         elif "label" in position:
             position = ClusteringLabel(**position)
