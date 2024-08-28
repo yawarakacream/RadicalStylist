@@ -37,11 +37,11 @@ def get_checkpoint_epochs(epochs: int, *, step: int) -> set[int]:
     return ret
 
 
-def save_images(images, path: str):
+def save_images(images, path: str, *, nrow=8):    
     m = torch.mean(images, dtype=torch.float).item()
     pad_value = 1 if m < 0.5 else 0
     
-    grid = torchvision.utils.make_grid(images, pad_value=pad_value)
+    grid = torchvision.utils.make_grid(images, nrow=nrow, pad_value=pad_value)
     image = torchvision.transforms.ToPILImage()(grid)
     image.save(path)
     return image

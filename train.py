@@ -6,8 +6,9 @@ import torch
 
 import character_utility as charutil
 from character_decomposer import BoundingBoxDecomposer, ClusteringLabelDecomposer, IdentityDecomposer
-from dataset import CharacterDecomposer, DatasetProvider, EtlcdbDatasetProvider, Kodomo2023DatasetProvider, KvgCompositionDatasetProvider, KvgDatasetProvider, RSDataset, Radical, WriterMode
+from dataset import CharacterDecomposer, DatasetProvider, EtlcdbDatasetProvider, Kodomo2023DatasetProvider, KvgCompositionDatasetProvider, KvgDatasetProvider, RSDataset, WriterMode
 from image_vae import StableDiffusionVae
+from radical import Radical
 from radical_stylist import RadicalStylist
 from utility import pathstr
 
@@ -184,18 +185,18 @@ if __name__ == "__main__":
         EtlcdbDatasetProvider(
             etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
             etlcdb_name="ETL8G_onlyhira_train",
-            preprocess_type="black_and_white 64x64",
+            preprocess_type="bw 64x64",
         ),
         # 9537 件
         EtlcdbDatasetProvider(
             etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
             etlcdb_name="ETL5_train",
-            preprocess_type="black_and_white 64x64",
+            preprocess_type="bw 64x64",
         ),
         # 14382 件
         Kodomo2023DatasetProvider(
             kodomo2023_path=pathstr("~/datadisk/dataset/kodomo2023"),
-            process_type="black_and_white 64x64",
+            process_type="bw 64x64",
             charnames=charutil.all_kanas,
         ),
     ]
@@ -205,7 +206,7 @@ if __name__ == "__main__":
         EtlcdbDatasetProvider(
             etlcdb_path=pathstr("~/datadisk/dataset/etlcdb"),
             etlcdb_name="ETL9G_onlykanji_train(sheet=1-1000)",
-            preprocess_type="black_and_white 64x64",
+            preprocess_type="bw 64x64",
         ),
         # 3719 件
         Kodomo2023DatasetProvider(
@@ -215,41 +216,13 @@ if __name__ == "__main__":
         ),
     ]
 
-    test_mode = "radical384"
+    test_mode = "radical384_bbox"
     print(f"{test_mode=}")
 
     if test_mode == "character384":
         save_path = pathstr("./output/nlp2024/character(d=384) nlp2024(kana,kanji)")
-
-        dim_radical_embedding = 384
-
-        len_radicals_of_char = 1
-        radical_position = "none"
-
-        character_decomposer = IdentityDecomposer()
-        datasets = [*nlp2024_kana_datasets, *nlp2024_kanji_datasets]
-        test_chars = [
-            # ETL8G にある & kodomo2023 にある
-            *"あくなり",
-
-            # ETL5 にある & kodomo2023 にある
-            *"イコサワ",
-
-            # ETL9G にある & kodomo2023 にある
-            *"海虫魚自",
-
-            # ETL9G にある & kodomo2023 にない
-            *"何標園遠",
-        ]
-        test_writers = [
-            *["ETL8G_onlyhira_train" for _ in range(8)],
-            *["ETL5_train" for _ in range(8)],
-            *["ETL9G_onlykanji_train(sheet=1-1000)" for _ in range(8)],
-            *["kodomo2023" for _ in range(8)],
-        ]
-
-    elif test_mode == "character384_2":
-        save_path = pathstr("./output/nlp2024/character(d=384)_2 nlp2024(kana,kanji)")
+        
+        vae_path = pathstr("./output/vae/SanariFont001(n_items=262140)/vae_100")
 
         dim_radical_embedding = 384
 
@@ -276,54 +249,10 @@ if __name__ == "__main__":
             *["kodomo2023" for _ in range(8)],
         ]
 
-    elif test_mode == "radical":
-        save_path = pathstr("./output/nlp2024/radical nlp2024(kana,kanji)+KVG(pad={4,8,12,16},sw=2)")
-
-        dim_radical_embedding = 768
-
-        len_radicals_of_char = 8
-        radical_position = "clustering-label"
-
-        character_decomposer = ClusteringLabelDecomposer(
-            kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-            radical_clustering_name="edu+jis_l1,2 n_clusters=384 (imsize=16,sw=2,blur=2)",
-        )
-        datasets = [
-            *nlp2024_kanji_datasets,
-            *[
-                # 9964 件
-                KvgDatasetProvider(
-                    kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-                    charnames=charutil.kanjis.all,
-                    mode="radical",
-                    padding=p,
-                    stroke_width=2,
-                )
-                for p in (4, 8, 12, 16)
-            ],
-        ]
-
-        test_chars = [
-            # ETL9G にある & kodomo2023 にある
-            *"海虫魚自",
-
-            # ETL9G にある & kodomo2023 にない
-            *"何標園遠",
-
-            # 部首単体
-            "kvg:05039-g1", # 亻 (倹)
-            "kvg:05b87-g1", # 宀 (宇)
-            "kvg:09ebb-g1", # 广 (麻)
-            "kvg:09060-g8", # ⻌ (遠)
-        ]
-        test_writers=[
-            *["ETL9G_onlykanji_train(sheet=1-1000)" for _ in range(8)],
-            *["kodomo2023" for _ in range(8)],
-            *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
-        ]
-
     elif test_mode == "radical384":
-        save_path = pathstr("./output/nlp2024/radical384 nlp2024(kana,kanji)+KVG(pad={4,8,12,16},sw=2)")
+        save_path = pathstr("./output/nlp2024/radical384 nlp2024(kanji)+KVG(pad={4,8,12,16},sw=2)")
+        
+        vae_path = pathstr("./output/vae/SanariFont001(n_items=262140)/vae_100")
 
         dim_radical_embedding = 384
 
@@ -368,13 +297,142 @@ if __name__ == "__main__":
             *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
         ]
         
+    elif test_mode == "radical768":
+        save_path = pathstr("./output/nlp2024/radical nlp2024(kana,kanji)+KVG(pad={4,8,12,16},sw=2)")
+        
+        vae_path = pathstr("./output/vae/SanariFont001(n_items=262140)/vae_100")
+
+        dim_radical_embedding = 768
+
+        len_radicals_of_char = 8
+        radical_position = "clustering-label"
+
+        character_decomposer = ClusteringLabelDecomposer(
+            kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+            radical_clustering_name="edu+jis_l1,2 n_clusters=384 (imsize=16,sw=2,blur=2)",
+        )
+        datasets = [
+            *nlp2024_kanji_datasets,
+            *[
+                # 9964 件
+                KvgDatasetProvider(
+                    kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+                    charnames=charutil.kanjis.all,
+                    mode="radical",
+                    padding=p,
+                    stroke_width=2,
+                )
+                for p in (4, 8, 12, 16)
+            ],
+        ]
+
+        test_chars = [
+            # ETL9G にある & kodomo2023 にある
+            *"海虫魚自",
+
+            # ETL9G にある & kodomo2023 にない
+            *"何標園遠",
+
+            # 部首単体
+            "kvg:05039-g1", # 亻 (倹)
+            "kvg:05b87-g1", # 宀 (宇)
+            "kvg:09ebb-g1", # 广 (麻)
+            "kvg:09060-g8", # ⻌ (遠)
+        ]
+        test_writers=[
+            *["ETL9G_onlykanji_train(sheet=1-1000)" for _ in range(8)],
+            *["kodomo2023" for _ in range(8)],
+            *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
+        ]
+
+    elif test_mode == "radical384_bbox":
+        save_path = pathstr("./output/nlp2024_like/radical384_bbox nlp2024(kanji)+KVG(pad={4,8,12,16},sw=2)")
+        
+        vae_path = pathstr("./output/vae/SanariFont001(n_items=262140)/vae_100")
+
+        dim_radical_embedding = 384
+
+        len_radicals_of_char = 12
+        radical_position = "bounding-box"
+
+        character_decomposer = BoundingBoxDecomposer(
+            kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+            depth="max",
+            image_size=64,
+            padding=4,
+            stroke_width=2,
+        )
+        datasets = [
+            *nlp2024_kanji_datasets,
+            *[
+                # 9964 件
+                KvgDatasetProvider(
+                    kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
+                    charnames=charutil.kanjis.all,
+                    mode="radical",
+                    padding=p,
+                    stroke_width=2,
+                )
+                for p in (4, 8, 12, 16)
+            ],
+        ]
+
+        test_chars = [
+            # ETL9G にある & kodomo2023 にある
+            *"海虫魚自",
+
+            # ETL9G にある & kodomo2023 にない
+            *"何標園遠",
+
+            # 部首単体
+            "kvg:05039-g1", # 亻 (倹)
+            "kvg:05b87-g1", # 宀 (宇)
+            "kvg:09ebb-g1", # 广 (麻)
+            "kvg:09060-g8", # ⻌ (遠)
+        ]
+        test_writers=[
+            *["ETLCDB" for _ in range(8)],
+            *["kodomo2023" for _ in range(8)],
+            *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
+        ]
+        
+    elif test_mode == "character384_defaultvae":
+        save_path = pathstr("./output/nlp2024/character384_defaultvae nlp2024(kana,kanji)")
+        
+        vae_path = pathstr("~/datadisk/stable-diffusion-v1-5/vae")
+
+        dim_radical_embedding = 384
+
+        len_radicals_of_char = 1
+        radical_position = "none"
+
+        character_decomposer = IdentityDecomposer()
+        datasets = [*nlp2024_kana_datasets, *nlp2024_kanji_datasets]
+        test_chars = [
+            # ETL8G にある & kodomo2023 にある
+            *"あくなり",
+
+            # ETL5 にある & kodomo2023 にある
+            *"イコサワ",
+
+            # ETL9G にある & kodomo2023 にある
+            *"海虫魚自",
+
+            # ETL9G にある & kodomo2023 にない
+            *"何標園遠",
+        ]
+        test_writers = [
+            *["ETLCDB" for _ in range(8)],
+            *["kodomo2023" for _ in range(8)],
+        ]
+
     else:
         raise Exception()
 
     main(
         save_path=save_path,
 
-        vae_path=pathstr("./output/vae/SanariFont001(n_items=262140)/vae_100"),
+        vae_path=vae_path,
 
         image_size=64,
         dim_radical_embedding=dim_radical_embedding,
@@ -391,7 +449,7 @@ if __name__ == "__main__":
         diffusion_beta_end=0.02,
 
         batch_size=244,
-        epochs=5000,
+        epochs=1000,
         shuffle_dataset=True,
         dataloader_num_workers=4,
         shuffle_radicallist_of_char=True,

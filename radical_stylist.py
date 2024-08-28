@@ -344,6 +344,7 @@ class RadicalStylist:
             raise Exception()
 
         sampled_latents = self.diffusion.sample(self.ema_model, radicallists, writerindices)
+        sampled_latents = sampled_latents.to(device=self.vae.device)
         sampled_images = self.vae.decode(sampled_latents)
         
         # char 毎にして返す

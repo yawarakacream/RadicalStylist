@@ -71,7 +71,7 @@ class BoundingBoxRadicallistEncoder(nn.Module):
             for i_r, radical in enumerate(radicallist):
                 radicalindices[i_r] = radical.idx
             batch_radicalindices.append(radicalindices)
-        
+
         batch_radicalindices = torch.tensor(batch_radicalindices, dtype=torch.long, device=self.device)
 
         batch_embedding = self.rademb_layer(batch_radicalindices)

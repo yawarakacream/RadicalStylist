@@ -56,7 +56,7 @@ katakanas2 = (
 )
 
 
-all_kanas = hiraganas + hiraganas2 + katakanas + katakanas2
+all_kanas = frozenset(hiraganas + hiraganas2 + katakanas + katakanas2)
 
 
 class Kanjis:
