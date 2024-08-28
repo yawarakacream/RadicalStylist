@@ -4,7 +4,7 @@ from typing import Union
 
 import torch
 
-from character_decomposer import BoundingBoxDecomposer, ClusteringLabelDecomposer
+from character_decomposer import IdentityDecomposer, BoundingBoxDecomposer, ClusteringLabelDecomposer
 from dataset import CharacterDecomposer, Radical
 from radical import Radical
 from radical_stylist import RadicalStylist
@@ -14,6 +14,7 @@ from utility import pathstr, char2code, save_images
 
 def main(
     save_path: str,
+    model_name:str,
 
     character_decomposer: CharacterDecomposer,
     chars: list[Union[str, tuple[str, list[Radical]]]],
@@ -25,7 +26,7 @@ def main(
     print(f"device: {device}")
 
     print("loading RadicalStylist...")
-    rs = RadicalStylist.load(save_path=save_path, device=device)
+    rs = RadicalStylist.load(save_path=save_path, model_name=model_name, device=device)
     print("loaded.")
 
     radicallists_with_name = prepare_radicallists_with_name(character_decomposer, rs.radicalname2idx, chars)
@@ -61,28 +62,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main(
-        save_path=pathstr("./output/rs ignore_writer ETL8G_400"),
+        save_path=pathstr("./output/character384 nlp2024(kana,kanji)"),
+        model_name="checkpoint=0100",
 
-        character_decomposer=ClusteringLabelDecomposer(
-            kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-            radical_clustering_name=pathstr("edu+jis_l1,2 n_clusters=384 (imsize=16,sw=2,blur=2)"),
-        ),
-        chars=[
-            # ETL8G にある字
-            *"何標園遠",
-
-            # 部首単体
-            "kvg:05039-g1", # 亻 (倹)
-            "kvg:05b87-g1", # 宀 (宇)
-            "kvg:09ebb-g1", # 广 (麻)
-            "kvg:09060-g8", # ⻌ (遠)
-
-            # ETL8G にないが KanjiVG にある字
-            *"倹困麻諭",
-        ],
+        character_decomposer=IdentityDecomposer(),
+        chars=list("あかさたな"),
         writers=[
-            *["ETL8G_400" for _ in range(8)],
-            *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
+            *["kodomo2023" for _ in range(8)],
+            *["ETLCDB" for _ in range(8)]
         ],
 
         device=torch.device(args.device),

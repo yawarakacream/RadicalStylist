@@ -1,5 +1,4 @@
 from argparse import ArgumentParser
-from math import e
 from typing import Iterable, Union
 
 import torch
@@ -215,41 +214,11 @@ if __name__ == "__main__":
         ),
     ]
 
-    test_mode = "radical384"
+    test_mode = "character384"
     print(f"{test_mode=}")
 
     if test_mode == "character384":
-        save_path = pathstr("./output/nlp2024/character(d=384) nlp2024(kana,kanji)")
-
-        dim_radical_embedding = 384
-
-        len_radicals_of_char = 1
-        radical_position = "none"
-
-        character_decomposer = IdentityDecomposer()
-        datasets = [*nlp2024_kana_datasets, *nlp2024_kanji_datasets]
-        test_chars = [
-            # ETL8G にある & kodomo2023 にある
-            *"あくなり",
-
-            # ETL5 にある & kodomo2023 にある
-            *"イコサワ",
-
-            # ETL9G にある & kodomo2023 にある
-            *"海虫魚自",
-
-            # ETL9G にある & kodomo2023 にない
-            *"何標園遠",
-        ]
-        test_writers = [
-            *["ETL8G_onlyhira_train" for _ in range(8)],
-            *["ETL5_train" for _ in range(8)],
-            *["ETL9G_onlykanji_train(sheet=1-1000)" for _ in range(8)],
-            *["kodomo2023" for _ in range(8)],
-        ]
-
-    elif test_mode == "character384_2":
-        save_path = pathstr("./output/nlp2024/character(d=384)_2 nlp2024(kana,kanji)")
+        save_path = pathstr("./output/character384 nlp2024(kana,kanji)")
 
         dim_radical_embedding = 384
 
@@ -276,98 +245,6 @@ if __name__ == "__main__":
             *["kodomo2023" for _ in range(8)],
         ]
 
-    elif test_mode == "radical":
-        save_path = pathstr("./output/nlp2024/radical nlp2024(kana,kanji)+KVG(pad={4,8,12,16},sw=2)")
-
-        dim_radical_embedding = 768
-
-        len_radicals_of_char = 8
-        radical_position = "clustering-label"
-
-        character_decomposer = ClusteringLabelDecomposer(
-            kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-            radical_clustering_name="edu+jis_l1,2 n_clusters=384 (imsize=16,sw=2,blur=2)",
-        )
-        datasets = [
-            *nlp2024_kanji_datasets,
-            *[
-                # 9964 件
-                KvgDatasetProvider(
-                    kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-                    charnames=charutil.kanjis.all,
-                    mode="radical",
-                    padding=p,
-                    stroke_width=2,
-                )
-                for p in (4, 8, 12, 16)
-            ],
-        ]
-
-        test_chars = [
-            # ETL9G にある & kodomo2023 にある
-            *"海虫魚自",
-
-            # ETL9G にある & kodomo2023 にない
-            *"何標園遠",
-
-            # 部首単体
-            "kvg:05039-g1", # 亻 (倹)
-            "kvg:05b87-g1", # 宀 (宇)
-            "kvg:09ebb-g1", # 广 (麻)
-            "kvg:09060-g8", # ⻌ (遠)
-        ]
-        test_writers=[
-            *["ETL9G_onlykanji_train(sheet=1-1000)" for _ in range(8)],
-            *["kodomo2023" for _ in range(8)],
-            *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
-        ]
-
-    elif test_mode == "radical384":
-        save_path = pathstr("./output/nlp2024/radical384 nlp2024(kana,kanji)+KVG(pad={4,8,12,16},sw=2)")
-
-        dim_radical_embedding = 384
-
-        len_radicals_of_char = 8
-        radical_position = "clustering-label"
-
-        character_decomposer = ClusteringLabelDecomposer(
-            kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-            radical_clustering_name="edu+jis_l1,2 n_clusters=384 (imsize=16,sw=2,blur=2)",
-        )
-        datasets = [
-            *nlp2024_kanji_datasets,
-            *[
-                # 9964 件
-                KvgDatasetProvider(
-                    kvg_path=pathstr("~/datadisk/dataset/kanjivg"),
-                    charnames=charutil.kanjis.all,
-                    mode="radical",
-                    padding=p,
-                    stroke_width=2,
-                )
-                for p in (4, 8, 12, 16)
-            ],
-        ]
-
-        test_chars = [
-            # ETL9G にある & kodomo2023 にある
-            *"海虫魚自",
-
-            # ETL9G にある & kodomo2023 にない
-            *"何標園遠",
-
-            # 部首単体
-            "kvg:05039-g1", # 亻 (倹)
-            "kvg:05b87-g1", # 宀 (宇)
-            "kvg:09ebb-g1", # 广 (麻)
-            "kvg:09060-g8", # ⻌ (遠)
-        ]
-        test_writers=[
-            *["ETLCDB" for _ in range(8)],
-            *["kodomo2023" for _ in range(8)],
-            *[f"KVG(pad={p},sw=2)" for p in (4, 8, 12, 16)],
-        ]
-        
     else:
         raise Exception()
 
